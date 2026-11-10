@@ -135,6 +135,10 @@ def test_every_screen_renders(client, sid, name):
     ("sim-whatif", {"symbol": "US500", "side": "sell", "amount": "20000"}),
     ("sim-whatif", {"symbol": "__other__", "other": ""}),
     ("sim-optimize", {"max_w": "20", "method": "hrp"}),
+    ("trader-stats", {"scope": "cfd"}), ("trader-patterns", {"scope": "cfd"}), ("trader-patterns", {"scope": "stock"}),
+    ("trader-sizing", {"symbol": "US500", "risk": "0,5", "stop": "3", "days": "10", "hit": "40", "payoff": "1"}),
+    ("trader-regimes", {"method": "vol", "states": "3"}), ("trader-regimes", {"method": "hmm", "states": "3"}),
+    ("tax", {"year": "2026", "method": "report"}), ("tax", {"year": "1999"}),
 ])
 def test_screen_params(client, sid, name, params):
     r = client.get(f"/api/session/{sid}/screen/{name}", query_string=params)
@@ -253,3 +257,27 @@ def test_whatif_buy_reduces_cash_in_payload(client, sid, portfolio):
     out = client.get(f"/api/session/{sid}/screen/sim-whatif", query_string={"symbol": "PKN.PL", "side": "buy", "amount": "5000"}).get_json()
     cash = next(m for b in out["blocks"] if b["kind"] == "metrics" for m in b["items"] if m["label"] == "Gotówka")
     assert cash["value"] == pytest.approx(float(portfolio.cash.iloc[-1]) - 5000)
+
+
+def test_tax_exports(client, sid):
+    pdf = client.get(f"/api/session/{sid}/tax/2025/nbp/zestawienie.pdf")
+    assert pdf.status_code == 200 and pdf.data[:5] == b"%PDF-" and pdf.mimetype == "application/pdf"
+    csv = client.get(f"/api/session/{sid}/tax/2025/nbp/transakcje.csv")
+    text = csv.data.decode("utf-8")
+    assert csv.status_code == 200 and text.startswith("\ufeffRok;Symbol") and "RAZEM" in text
+    assert "attachment" in csv.headers["Content-Disposition"]
+    assert client.get(f"/api/session/{sid}/tax/2025/report/dywidendy.csv").status_code == 200
+    assert "porada" in client.get(f"/api/session/{sid}/tax/2025/nbp/podsumowanie.csv").data.decode("utf-8")
+    assert client.get(f"/api/session/{sid}/tax/1999/nbp/zestawienie.pdf").status_code == 404
+    assert client.get(f"/api/session/{sid}/tax/2025/nbp/inne.txt").status_code == 404
+    assert client.get(f"/api/session/{sid}/tax/2025/zla/zestawienie.pdf").status_code == 404
+
+
+def test_tax_screen_carries_disclaimer_and_downloads(client, sid):
+    out = client.get(f"/api/session/{sid}/screen/tax").get_json()
+    kinds = [b["kind"] for b in out["blocks"]]
+    assert out["blocks"][1]["kind"] == "note" and "nie porada podatkowa" in out["blocks"][1]["text"]
+    assert kinds.count("download") == 4
+    for b in out["blocks"]:
+        if b["kind"] == "download":
+            assert client.get(f"/api/session/{sid}/{b['path']}").status_code == 200

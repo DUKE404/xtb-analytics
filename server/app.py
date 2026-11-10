@@ -209,6 +209,26 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
         out["ms"] = int((time.time() - t0) * 1000)
         return ok(out)
 
+    @app.get("/api/session/<sid>/tax/<int:year>/<method>/<name>")
+    def tax_export(sid, year, method, name):
+        """Eksport zestawienia podatkowego: PDF albo CSV (średnik, przecinek dziesiętny, BOM dla Excela)."""
+        from core import tax as tax_core
+        from server.screens import tax as tax_screen
+
+        ctx = get_ctx(sid)
+        if method not in ("nbp", "report") or year not in tax_screen.years(ctx):
+            raise ApiError("Nie ma takiego zestawienia.", 404, "no_report")
+        rep = tax_screen.build(ctx, year, method)
+        if name == "zestawienie.pdf":
+            data, mime = tax_core.report_pdf(rep, os.path.join(ROOT, "server", "fonts")), "application/pdf"
+        else:
+            maker = {"transakcje.csv": tax_core.fifo_csv, "dywidendy.csv": tax_core.dividends_csv,
+                     "podsumowanie.csv": tax_core.summary_csv}.get(name)
+            if maker is None:
+                raise ApiError("Nie ma takiego pliku.", 404, "no_report")
+            data, mime = ("\ufeff" + maker(rep)).encode("utf-8"), "text/csv; charset=utf-8"
+        return Response(data, mimetype=mime, headers={"Content-Disposition": f'attachment; filename="PIT-38_{year}_{name}"'})
+
     # ------------------------------------------------------------------ pliki statyczne
     @app.get("/")
     def index():

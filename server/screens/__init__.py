@@ -45,7 +45,7 @@ class Params:
         return str(v).lower() in ("1", "true", "tak", "on", "yes")
 
 
-from server.screens import overview, performance, risk, sim, trader  # noqa: E402
+from server.screens import overview, performance, risk, sim, tax, trader  # noqa: E402
 
 SCREENS = {
     "overview": overview.overview,
@@ -68,6 +68,7 @@ SCREENS = {
     "trader-sizing": trader.sizing,
     "trader-costs": trader.costs,
     "trader-regimes": trader.regime_screen,
+    "tax": tax.screen,
 }
 
 # Dolny pasek: maks. 5 pozycji. "more" to menu z pozostałymi działami.
@@ -89,6 +90,8 @@ MORE = [
         {"id": "trader-stats", "label": "Statystyki"}, {"id": "trader-patterns", "label": "Wzorce"},
         {"id": "trader-sizing", "label": "Wielkość pozycji"}, {"id": "trader-costs", "label": "Koszty"},
         {"id": "trader-regimes", "label": "Reżimy"}]},
+    {"id": "tax", "label": "Podatki", "hint": "Zestawienie do PIT-38: FIFO, kursy NBP, dywidendy zagraniczne",
+     "screens": [{"id": "tax", "label": "PIT-38"}]},
     {"id": "import", "label": "Dane i import", "hint": "Wgraj eksport z xStation 5, popraw tickery", "screens": [
         {"id": "import", "label": "Import"}, {"id": "mapping", "label": "Tickery"}, {"id": "data", "label": "Wczytane dane"}]},
     {"id": "settings", "label": "Ustawienia", "hint": "Benchmark, stopa wolna od ryzyka, instalacja na telefonie",

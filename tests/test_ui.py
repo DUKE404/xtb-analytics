@@ -215,3 +215,16 @@ def test_monte_carlo_horizon_switch(page, base_url):
     page.wait_for_function("document.querySelector('.statement').textContent.includes('Za 10 lat')", timeout=30000)
     assert page.locator(".chart svg polygon").count() == 2      # dwa pasma percentyli
     assert not page.errors, page.errors
+
+
+def test_tax_screen_and_pdf_download(page, base_url):
+    page.goto(base_url + "/#/tax/tax")
+    wait_ready(page)
+    assert "nie porada podatkowa" in page.inner_text(".note.warn")
+    with page.expect_download(timeout=30000) as info:
+        page.locator(".btn", has_text="Pobierz zestawienie (PDF)").tap()
+    assert info.value.suggested_filename.startswith("PIT-38_") and info.value.suggested_filename.endswith(".pdf")
+    with open(info.value.path(), "rb") as fh:
+        assert fh.read(5) == b"%PDF-"
+    shot(page, "95-tax")
+    assert not page.errors, page.errors

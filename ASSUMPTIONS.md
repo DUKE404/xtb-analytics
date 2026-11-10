@@ -152,3 +152,24 @@ zmienić w kodzie; najważniejsze są też wystawione w UI (panel boczny, tabela
 - **Reżimy rynku**: wyznaczane na benchmarku z ustawień. HMM z rozkładami normalnymi (Baum-Welch + Viterbi,
   własna implementacja), stany uporządkowane po zmienności; alternatywnie progi zmienności z 21 sesji
   (67. percentyl przy 2 stanach; 50. i 85. przy 3). Reżimy są wyznaczone ex post - nie służą do prognoz.
+
+## Etap 6 - podatki (PIT-38)
+
+- To **pomoc obliczeniowa, nie porada podatkowa** - adnotacja jest na ekranie, w PDF i w CSV. XTB jako polski
+  dom maklerski wystawia PIT-8C i to on jest dokumentem dla urzędu; zestawienie służy do zrozumienia i kontroli.
+- **FIFO** liczone osobno dla każdego instrumentu po wszystkich zakupach z eksportu (zamknięte i otwarte
+  pozycje), niezależnie od tego, którą pozycję XTB wskazał jako zamkniętą.
+- **Kurs**: średni NBP (tabela A) z ostatniego dnia publikacji przed dniem transakcji, osobno dla zakupu
+  i sprzedaży. Za dzień transakcji przyjęto datę z raportu XTB, nie datę rozliczenia (T+2).
+- **Koszty**: koszt zakupu wg FIFO + prowizje od zamkniętych pozycji (w PLN z raportu). Koszt przewalutowania
+  XTB nie jest osobną pozycją kosztów.
+- **CFD**: kwoty w PLN z raportu; zyski = przychód, straty + swapy + prowizje = koszty, wg roku zamknięcia.
+- **Dywidendy zagraniczne**: 19% brutto minus podatek u źródła (maks. 19% brutto), liczone per kraj,
+  zaokrąglane łącznie do pełnych złotych. Gdy komentarz operacji podaje kwotę na akcję w walucie, a stan
+  posiadania z eksportu zgadza się z wypłatą (±10%), kwota brutto jest przeliczana po kursie NBP D-1; w innym
+  razie brana jest kwota PLN z raportu. Dywidendy polskie pokazane informacyjnie (podatek pobiera płatnik).
+- **Kraj do PIT/ZG** pochodzi z tabeli tickerów (dla ETF-ów to obszar inwestycji, nie kraj rejestracji
+  funduszu - do poprawienia ręcznie).
+- **Poza zakresem**: straty z lat ubiegłych, inne rachunki, pozycje przeniesione od innego brokera, konta
+  IKE/IKZE, numery pól formularza (zmieniają się co roku).
+- **Wariant porównawczy** „Kwoty z raportu XTB” używa wartości PLN przeliczonych przez brokera.
