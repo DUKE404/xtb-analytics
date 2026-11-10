@@ -95,6 +95,10 @@ function lineChart(spec) {
       label.textContent = fmtDate(spec.x[i], "axis");
       root.append(label);
     }
+    const half = (W - 2 * PAD) / Math.max(1, n - 1) / 2;
+    for (const [a, b] of spec.spans || []) {       // zacieniowane okresy (np. nerwowy rynek)
+      root.append(svg("rect", { x: x(a) - half, y: top, width: x(b) - x(a) + 2 * half, height: plotH, fill: "var(--ink)", "fill-opacity": 0.09 }));
+    }
     spec.series.forEach((s, k) => {
       let d = "", pen = false, first = null, lastI = null;
       s.values.forEach((v, i) => {
@@ -175,9 +179,12 @@ function barsChart(spec) {
   const readout = el("p", { class: "readout" }, "Dotknij grupy, żeby zobaczyć wartości");
   const body = el("div", { class: "chart-body" });
   wrap.append(lg.ul, readout, body);
+  const single = spec.series.length === 1;
+  if (single) { lg.ul.hidden = true; readout.textContent = "Dotknij słupka, żeby zobaczyć wartość"; }
   const show = (g) => {
     spec.series.forEach((s, k) => { lg.values[k].textContent = g === null ? "" : fmt(s.values[g], spec.fmt, spec.digits); });
-    readout.textContent = g === null ? "Dotknij grupy, żeby zobaczyć wartości" : spec.labels[g];
+    if (single) readout.replaceChildren(`${spec.labels[g]}  `, el("b", {}, fmt(spec.series[0].values[g], spec.fmt, spec.digits)));
+    else readout.textContent = spec.labels[g];
   };
   responsive(body, (W) => {
     const H = 220, top = 18, bottom = 24, plotH = H - top - bottom;
@@ -200,7 +207,8 @@ function barsChart(spec) {
         const v = s.values[g];
         if (!isNum(v)) return;
         const y0 = y(Math.max(v, 0)), h = Math.max(1, Math.abs(y(v) - y(0)));
-        root.append(svg("rect", { x: x0 + k * (barW + 2), y: y0, width: barW, height: h, rx: Math.min(4, barW / 2), fill: color(s.color) }));
+        const fill = single && spec.signed !== false ? (v < 0 ? "var(--neg)" : "var(--pos)") : color(s.color);
+        root.append(svg("rect", { x: x0 + k * (barW + 2), y: y0, width: barW, height: h, rx: Math.min(4, barW / 2), fill }));
       });
       const label = svg("text", { class: "axis-text", x: left + g * groupW + groupW / 2, y: H - 6, "text-anchor": "middle" });
       label.textContent = name;

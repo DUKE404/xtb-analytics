@@ -51,7 +51,7 @@ def _first_bday_on_or_after(dates: pd.DatetimeIndex, year: int, month: int, day:
     return dates[i] if i < len(dates) and dates[i].month == month else None
 
 
-def generate(seed: int = 12, start: str = "2024-11-04", as_of: str = "2026-11-06",
+def generate(seed: int = 13, start: str = "2024-11-04", as_of: str = "2026-11-06",
              market: SyntheticMarket | None = None) -> dict:
     """Zwraca dict z ramkami `closed`, `open`, `cash` (kolumny jak w raporcie XTB, EN) i datą `as_of`."""
     rng = np.random.default_rng(seed)
@@ -172,7 +172,8 @@ def generate(seed: int = 12, start: str = "2024-11-04", as_of: str = "2026-11-06
                 continue
             price = float(px[c["symbol"]].at[d])
             ret = c["dir"] * (price / c["open_price"] - 1)
-            p = 0.60 if ret > 0.012 else 0.15 if ret < -0.015 else 0.12
+            # efekt dyspozycji: mały zysk zamykany od razu, strata trzymana, aż urośnie
+            p = 0.70 if ret > 0.004 else 0.20 if ret < -0.02 else 0.04
             if (held >= 25 or rng.random() < p) and di < len(dates) - 5:
                 last_cfd_loss = _close_cfd(c, d, price, rng, mp, fxr, op, closed_rows, tstamp) < 0
                 cfds.remove(c)
@@ -343,7 +344,7 @@ def ensure_sample(path: str = DEFAULT_SAMPLE_PATH) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser(description="Generator przykładowego eksportu xStation 5")
     ap.add_argument("--out", default=DEFAULT_SAMPLE_PATH)
-    ap.add_argument("--seed", type=int, default=12)
+    ap.add_argument("--seed", type=int, default=13)
     args = ap.parse_args()
     data = generate(seed=args.seed)
     print(write_xlsx(data, args.out), "| zamknięte:", len(data["closed"]), "| otwarte:", len(data["open"]),

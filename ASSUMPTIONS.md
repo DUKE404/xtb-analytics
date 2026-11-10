@@ -131,3 +131,24 @@ zmienić w kodzie; najważniejsze są też wystawione w UI (panel boczny, tabela
   już ma; wagi ≥ 0, suma 100%, limit wagi na pozycję (domyślnie 35%). Kowariancja z 504 sesji ściągnięta
   w 20% do diagonalnej; średnie zwroty ściągnięte w 50% do średniej wszystkich pozycji. Parytet ryzyka
   rozwiązywany w postaci wypukłej; HRP wg Lópeza de Prado (pojedyncze wiązanie, podział rekurencyjny).
+
+## Etap 5 - analityka tradera i koszty
+
+- **Transakcja** = jedna zamknięta pozycja z raportu. Wynik netto = wynik brutto + prowizja + swap + rollover.
+  Wielkość: dla akcji/ETF wartość zakupu z raportu, dla CFD nominał (loty × mnożnik × cena × kurs NBP).
+- **Godziny i dni tygodnia** wg czasu z raportu XTB, bez przeliczania stref.
+- **Większe pozycje po stracie**: wielkość normalizowana medianą wielkości na tym samym instrumencie;
+  „poprzednia” transakcja to ostatnia zamknięta przed otwarciem bieżącej. Wzorzec = stosunek ≥ 1,2 i p < 0,05
+  (test Manna-Whitneya).
+- **Efekt dyspozycji**: mediana czasu trzymania strat ≥ 1,5 × mediana dla zysków i p < 0,05.
+- **Zbyt wczesna realizacja zysków**: ruch ceny przez 20 sesji po zamknięciu zyskownej transakcji, w kierunku
+  pozycji; wzorzec = średni ruch > 0, ponad 55% przypadków na korzyść i p < 0,10 (test t).
+- **Wielkość pozycji** (kalkulator): kapitał × ryzyko ÷ (k × zmienność dzienna × √dni), zmienność z 120 sesji.
+  Kelly: f = p − (1 − p)/b, w aplikacji pokazana także połowa; odnosi się do kapitału ryzykowanego w transakcji.
+- **Koszty**: prowizje i swapy z raportu. Spread = połowa spreadu z tabeli tickerów od każdej nogi transakcji
+  (wartości domyślne są szacunkiem autora: akcje GPW 15 pb, USA 4 pb, ETF 8 pb, CFD na indeksy 2,5 pb).
+  Przewalutowanie = 0,5% od kupna i sprzedaży akcji/ETF w walucie obcej - stawka przyjęta z pamięci, do
+  sprawdzenia w aktualnej tabeli opłat XTB. Spread i przewalutowanie są już zawarte w cenach transakcji.
+- **Reżimy rynku**: wyznaczane na benchmarku z ustawień. HMM z rozkładami normalnymi (Baum-Welch + Viterbi,
+  własna implementacja), stany uporządkowane po zmienności; alternatywnie progi zmienności z 21 sesji
+  (67. percentyl przy 2 stanach; 50. i 85. przy 3). Reżimy są wyznaczone ex post - nie służą do prognoz.
