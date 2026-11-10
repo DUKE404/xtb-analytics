@@ -71,6 +71,24 @@ def table(df: pd.DataFrame, height: int | None = None, hide_index: bool = True, 
     st.dataframe(df, hide_index=hide_index, **kwargs)
 
 
+def table_fmt(df: pd.DataFrame, pct: tuple = (), money: tuple = (), dec: tuple = (), pct_digits: int = 1,
+              dec_digits: int = 2, height: int | None = None, hide_index: bool = True) -> None:
+    """Tabela liczbowa: kolumny `pct` (ułamki) pokazane w %, `money` w pełnych złotych, `dec` z ułamkiem."""
+    out, cfg = df.copy(), {}
+    for c in pct:
+        if c in out.columns:
+            out[c] = pd.to_numeric(out[c], errors="coerce") * 100.0
+            cfg[c] = st.column_config.NumberColumn(c, format=f"%.{pct_digits}f%%")
+    for c in money:
+        if c in out.columns:
+            out[c] = pd.to_numeric(out[c], errors="coerce").round(0)
+            cfg[c] = st.column_config.NumberColumn(c, format="%.0f zł")
+    for c in dec:
+        if c in out.columns:
+            cfg[c] = st.column_config.NumberColumn(c, format=f"%.{dec_digits}f")
+    table(out, height=height, hide_index=hide_index, column_config=cfg)
+
+
 def editor(df: pd.DataFrame, key: str, **kwargs) -> pd.DataFrame:
     return st.data_editor(df, key=key, **(_stretch(st.data_editor) | kwargs))
 
@@ -173,10 +191,12 @@ def hbar(series: pd.Series, title: str | None = None, height: int | None = None,
 def heatmap(z: pd.DataFrame, title: str | None = None, height: int = 420, diverging: bool = True,
             fmt: str = ".2f", zmid: float | None = 0.0, text: bool = True, suffix: str = "") -> go.Figure:
     kwargs = dict(colorscale=DIVERGING, zmid=zmid) if diverging else dict(colorscale=SEQUENTIAL)
+    # własne etykiety: puste komórki (NaN) zostają puste zamiast "NaN"
+    labels = [["" if pd.isna(v) else (f"{v:{fmt}}".replace(".", ",") + suffix) for v in row] for row in z.values]
     fig = go.Figure(go.Heatmap(
         z=z.values, x=[str(c) for c in z.columns], y=[str(i) for i in z.index], xgap=2, ygap=2,
-        texttemplate=("%{z:" + fmt + "}" + suffix) if text else None, textfont=dict(color=INK, size=11),
-        hovertemplate="%{y} / %{x}: %{z:" + fmt + "}" + suffix + "<extra></extra>",
+        text=labels, texttemplate="%{text}" if text else None, textfont=dict(color=INK, size=11),
+        hovertemplate="%{y} / %{x}: %{text}<extra></extra>", hoverongaps=False,
         colorbar=dict(thickness=10, outlinewidth=0, tickformat=fmt), **kwargs))
     style(fig, height, title, legend=False, unified=False)
     fig.update_xaxes(showgrid=False, side="bottom")

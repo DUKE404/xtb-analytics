@@ -37,6 +37,22 @@ class Ctx:
     def meta(self) -> pd.DataFrame:
         return self.pf.meta
 
+    def bench_returns(self) -> pd.DataFrame:
+        """Dzienne zwroty benchmarków w PLN na kalendarzu portfela (WIG20, WIG, S&P 500, MSCI World)."""
+        if getattr(self, "_bench_returns", None) is None:
+            from core.performance import levels_to_returns
+            from data.loader import BENCHMARK_KEYS
+            cols = [k for k in BENCHMARK_KEYS if k in self.market.benchmarks_pln.columns]
+            self._bench_returns = levels_to_returns(self.market.benchmarks_pln[cols], self.pf.dates)
+        return self._bench_returns
+
+    def bench_series(self) -> pd.Series:
+        """Zwroty benchmarku wybranego w panelu bocznym (pusta seria, gdy nie udało się go pobrać)."""
+        br = self.bench_returns()
+        if self.bench in br.columns:
+            return br[self.bench]
+        return br.iloc[:, 0] if br.shape[1] else pd.Series(dtype=float)
+
 
 def _digest(*parts) -> str:
     h = hashlib.md5()

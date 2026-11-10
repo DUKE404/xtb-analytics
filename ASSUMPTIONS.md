@@ -42,3 +42,22 @@ zmienić w kodzie; najważniejsze są też wystawione w UI (panel boczny, tabela
 - **Ceny z Yahoo** są skorygowane o splity, ale nie o dywidendy (dywidendy przychodzą z operacji gotówkowych).
   Akcje z LSE (`.UK`) mają domyślnie mnożnik 0,01 (pensy → funty); znane ETF-y notowane w USD mają 1.
 - **Cache**: SQLite w `.cache/market.sqlite`; dane odświeżane, gdy brakuje zakresu albo są starsze niż 12 h.
+
+## Etap 2 - performance
+
+- **TWR** liczony dziennie z przepływami na początku dnia: `r = V_t / (V_{t-1} + F_t) − 1`, potem łańcuchowany.
+- **MWR/XIRR**: konwencja ACT/365 jak w Excelu; wpłata ujemna, wypłata i wartość końcowa dodatnie.
+  Dla okresu krótszego niż cała historia wartość portfela na początku okresu jest traktowana jak wpłata.
+- **Annualizacja**: 252 dni sesyjne. Zmienność i Sharpe z odchylenia standardowego próby (ddof=1).
+- **Stopa wolna od ryzyka**: domyślnie 4,0% rocznie, ustawiana w panelu bocznym (Sharpe, Sortino, alfa).
+- **Sortino**: odchylenie w dół liczone względem stopy wolnej od ryzyka, po wszystkich dniach.
+- **Obsunięcie** liczone na indeksie TWR (nie na wartości w PLN), więc wpłaty go nie maskują; poziom startowy
+  też jest szczytem. Czasy trwania w dniach kalendarzowych.
+- **Benchmarki**: WIG20, WIG, S&P 500 i ETF na MSCI World (URTH) przeliczone do PLN kursem NBP. WIG jest
+  indeksem dochodowym, WIG20 i S&P 500 cenowymi - portfel z dywidendami ma nad nimi lekką przewagę z definicji.
+- **Beta/alfa/TE/IR** z dziennych zwrotów względem benchmarku wybranego w panelu bocznym (domyślnie MSCI World).
+  Giełdy w USA zamykają się po GPW, więc dzienna beta portfela mieszanego jest lekko zaniżona.
+- **Atrybucja**: dzienny wynik instrumentu = zmiana wyceny + jego operacje gotówkowe. Rozkład na efekt cen
+  (ilość z wczoraj × zmiana ceny × kurs z wczoraj), efekt walutowy (wartość w walucie × zmiana kursu, z członem
+  mieszanym), dywidendy netto i resztę (koszty, swapy, intraday, różnica cena transakcji/zamknięcie). Wkłady
+  w TWR łańcuchowane tak, by sumowały się dokładnie do TWR.
