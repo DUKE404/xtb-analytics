@@ -1,0 +1,44 @@
+# Założenia
+
+Lista decyzji podjętych tam, gdzie specyfikacja zostawiała pole do interpretacji. Każde z nich da się
+zmienić w kodzie; najważniejsze są też wystawione w UI (panel boczny, tabela mapowań).
+
+## Środowisko budowy
+
+- Aplikacja powstała w środowisku bez internetu i bez możliwości instalacji pakietów. Moduły `core/` i `data/`
+  są przetestowane pytestem. Interfejs Streamlit był tam sprawdzany testem dymnym na atrapach bibliotek
+  (`tests/fakes/`); u użytkownika `make test` uruchamia prawdziwy test `streamlit.testing.AppTest`.
+- Pobieranie na żywo (yfinance, Stooq, NBP, biblioteka K. Frencha) nie mogło być tam wywołane. Przetestowane
+  są parsery formatów odpowiedzi i logika cache/fallbacku, nie same połączenia.
+- `riskfolio-lib` zastąpiono własną implementacją (min-variance, max Sharpe, risk parity, HRP) - specyfikacja
+  to dopuszcza, a biblioteka ciągnie ciężkie zależności (cvxpy), które psują instalację „jedną komendą”.
+- HMM do reżimów rynkowych zaimplementowano w numpy (bez `hmmlearn`), regresję OLS także (bez `statsmodels`).
+
+## Etap 1 - import i rekonstrukcja portfela
+
+- **Format eksportu.** Parser rozpoznaje arkusze po nazwie i po nagłówkach (PL/EN), szuka wiersza nagłówków
+  w pierwszych 40 wierszach, usuwa wiersze „Total/Suma”. Sufiks `_9` w symbolu (akcje rzeczywiste) jest
+  obcinany, `_4` (CFD na akcje) zostaje i oznacza CFD.
+- **Waluta konta.** Zakładam konto w PLN: kwoty w operacjach gotówkowych, „Purchase value”, „Sale value”
+  i „Gross P/L” są w PLN, ceny w walucie instrumentu. Konto w EUR/USD jest obsłużone w podstawowym zakresie:
+  kwoty przeliczane na PLN po kursie NBP z dnia operacji.
+- **Dane przykładowe** są w pełni syntetyczne (`data/sample_generator.py`), a ceny w trybie demo pochodzą
+  z modelu czynnikowego (`data/synthetic.py`), nie z rynku. W zachowaniu przykładowego tradera celowo zaszyto
+  dwa wzorce (większe pozycje CFD po stracie, szybsza realizacja zysków niż strat), żeby było co wykrywać.
+- **Kalendarz.** Dni robocze pon-pt. Operacje z weekendu trafiają na najbliższy dzień roboczy. Ceny w dni
+  świąteczne danej giełdy = ostatnie znane zamknięcie.
+- **Stan posiadania** liczony na koniec dnia: pozycja otwarta w dniu D jest w portfelu od D, zamknięta w D już
+  nie. Pozycje intraday nie pojawiają się w stanie - ich wynik jest w operacji „close trade”.
+- **Wycena.** Akcje/ETF: ilość × cena zamknięcia × kurs średni NBP. CFD: w wartości portfela jest tylko
+  niezrealizowany wynik `loty × mnożnik × (cena − cena otwarcia) × kurs`; depozyt zostaje w gotówce.
+  Ekspozycja CFD = nominał ze znakiem.
+- **Gotówka** = skumulowana suma operacji gotówkowych z raportu. Wymaga to pełnej historii operacji.
+- **Przepływy zewnętrzne** = wpłaty, wypłaty, transfery. Dywidendy, odsetki, podatki, swapy i prowizje to wynik.
+  Nierozpoznany typ operacji jest traktowany jako wynik (i wypisany w uwagach).
+- **Brak notowań** dla instrumentu: pozycja wyceniana po cenie otwarcia (płasko) + ostrzeżenie, żeby jedna
+  zła nazwa tickera nie psuła całej krzywej kapitału.
+- **Mnożniki CFD** (wartość punktu na lot) i stawki depozytu pochodzą z tabeli w `data/mapping.py` wg
+  specyfikacji instrumentów XTB znanej autorowi; są edytowalne w UI. Sprawdź je dla swoich instrumentów.
+- **Ceny z Yahoo** są skorygowane o splity, ale nie o dywidendy (dywidendy przychodzą z operacji gotówkowych).
+  Akcje z LSE (`.UK`) mają domyślnie mnożnik 0,01 (pensy → funty); znane ETF-y notowane w USD mają 1.
+- **Cache**: SQLite w `.cache/market.sqlite`; dane odświeżane, gdy brakuje zakresu albo są starsze niż 12 h.
