@@ -190,3 +190,28 @@ def test_bad_file_shows_readable_error_and_keeps_session(page, base_url, tmp_pat
     page.goto(base_url + "/#/overview")
     wait_ready(page)
     assert "19 dni na 20" in page.inner_text(".statement")
+
+
+def test_custom_stress_scenario_form(page, base_url):
+    page.goto(base_url + "/#/sim/sim-stress")
+    wait_ready(page)
+    row = page.locator("table.data tbody tr", has_text="Własny scenariusz").first
+    before = row.inner_text()
+    page.get_by_label("S&P 500 (%)").fill("-40")
+    page.locator(".btn", has_text="Przelicz scenariusz").tap()
+    page.wait_for_function("t => document.querySelector('main:not(.is-loading)') && ![...document.querySelectorAll('table.data tbody tr')].some(r => r.innerText === t)", arg=before, timeout=30000)
+    after = page.locator("table.data tbody tr", has_text="Własny scenariusz").first.inner_text()
+    assert after != before and "−" in after                       # głębszy spadek S&P -> strata
+    assert page.get_by_label("S&P 500 (%)").input_value() == "-40"  # formularz pamięta wpisane wartości
+    assert not page.errors, page.errors
+
+
+def test_monte_carlo_horizon_switch(page, base_url):
+    page.goto(base_url + "/#/sim/sim-montecarlo")
+    wait_ready(page)
+    assert "Za 5 lat" in page.inner_text(".statement")
+    page.locator(".segmented button", has_text="10 lat").tap()
+    page.locator(".btn", has_text="Przelicz symulację").tap()
+    page.wait_for_function("document.querySelector('.statement').textContent.includes('Za 10 lat')", timeout=30000)
+    assert page.locator(".chart svg polygon").count() == 2      # dwa pasma percentyli
+    assert not page.errors, page.errors

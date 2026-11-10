@@ -45,7 +45,7 @@ class Params:
         return str(v).lower() in ("1", "true", "tak", "on", "yes")
 
 
-from server.screens import overview, performance, risk  # noqa: E402
+from server.screens import overview, performance, risk, sim  # noqa: E402
 
 SCREENS = {
     "overview": overview.overview,
@@ -59,6 +59,10 @@ SCREENS = {
     "risk-exposure": risk.exposure,
     "risk-factors": risk.factor_exposure,
     "risk-cfd": risk.cfd_screen,
+    "sim-stress": sim.stress_screen,
+    "sim-montecarlo": sim.montecarlo_screen,
+    "sim-whatif": sim.whatif_screen,
+    "sim-optimize": sim.optimize_screen,
 }
 
 # Dolny pasek: maks. 5 pozycji. "more" to menu z pozostałymi działami.
@@ -71,6 +75,9 @@ NAV = [
         {"id": "risk-var", "label": "VaR"}, {"id": "risk-correlation", "label": "Korelacje"},
         {"id": "risk-exposure", "label": "Ekspozycje"}, {"id": "risk-factors", "label": "Czynniki"},
         {"id": "risk-cfd", "label": "CFD"}]},
+    {"id": "sim", "label": "Symulacje", "icon": "dice", "screens": [
+        {"id": "sim-stress", "label": "Stres"}, {"id": "sim-montecarlo", "label": "Monte Carlo"},
+        {"id": "sim-whatif", "label": "Co jeśli"}, {"id": "sim-optimize", "label": "Optymalizacja"}]},
 ]
 MORE = [
     {"id": "import", "label": "Dane i import", "hint": "Wgraj eksport z xStation 5, popraw tickery", "screens": [

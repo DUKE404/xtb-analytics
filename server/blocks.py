@@ -8,6 +8,7 @@ Kolory serii: numer miejsca w palecie 0-7 albo nazwa: 'neutral', 'pos', 'neg'.
 from __future__ import annotations
 
 import math
+import re
 from datetime import date, datetime
 
 import numpy as np
@@ -89,9 +90,17 @@ def f_pct(x, digits: int = 1, sign: bool = False) -> str:
 # Bloki
 # --------------------------------------------------------------------------- #
 
+_ORPHAN = re.compile(r"(?<![^\s„(])([wziouaWZIOUA])\s+")
+
+
+def no_orphans(text: str | None) -> str | None:
+    """Polska typografia: jednoliterowe spójniki i przyimki nie zostają na końcu wiersza."""
+    return _ORPHAN.sub("\\1\u00a0", text) if text else text
+
+
 def statement(text: str, sub: str | None = None) -> dict:
     """Jedno zdanie prostym językiem - otwarcie ekranu."""
-    return {"kind": "statement", "text": text, "sub": sub}
+    return {"kind": "statement", "text": no_orphans(text), "sub": no_orphans(sub)}
 
 
 def metric(label: str, value, fmt: str = "num", tip: str | None = None, digits: int | None = None,
@@ -131,9 +140,10 @@ def control(name: str, type_: str, label: str, value, options: list | None = Non
     return out
 
 
-def controls(items: list[dict], submit: str | None = None) -> dict:
-    """Bez `submit` zmiana kontrolki od razu przelicza ekran; z `submit` dopiero po dotknięciu przycisku."""
-    return {"kind": "controls", "items": items, "submit": submit}
+def controls(items: list[dict], submit: str | None = None, grid: bool = False) -> dict:
+    """Bez `submit` zmiana kontrolki od razu przelicza ekran; z `submit` dopiero po dotknięciu przycisku.
+    `grid`: krótkie pola liczbowe w dwóch kolumnach."""
+    return {"kind": "controls", "items": items, "submit": submit, "grid": grid}
 
 
 def chart(spec: dict, title: str | None = None, caption: str | None = None) -> dict:

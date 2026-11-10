@@ -105,3 +105,29 @@ zmienić w kodzie; najważniejsze są też wystawione w UI (panel boczny, tabela
   założenie ostrożne). Stop out przy poziomie depozytu 50%. Odległość do stop outu = strata, która do niego
   prowadzi, podzielona przez nominał brutto CFD (jednolity ruch przeciw wszystkim pozycjom). Roczny koszt
   swapów = suma swapów / (nominał × czas utrzymywania).
+
+## Etap 4 - stress testy i symulacje
+
+- **Scenariusze historyczne** (2008, marzec 2020, 2022) to przybliżone, zaokrąglone ruchy od szczytu do dołka
+  dziewięciu czynników: S&P 500, Nasdaq 100, WIG20, akcje europejskie (DAX), akcje globalne, złoto, ropa,
+  USD/PLN, EUR/PLN. Wartości wpisano z pamięci autora o publicznie znanych poziomach indeksów; nie były tu
+  weryfikowane ze źródłem. Tabela szoków jest widoczna na ekranie i w `core/stress.py`.
+- **Mapowanie pozycji na czynniki**: akcje polskie → WIG20; amerykańskie → Nasdaq 100 (technologia,
+  telekomunikacja) albo S&P 500; europejskie → DAX; ETF-y wg rodzaju; reszta → akcje globalne. Waluta: USD →
+  USD/PLN, pozostałe waluty obce → EUR/PLN (przybliżenie). CFD na waluty i kryptowaluty są poza modelem.
+- **Skalowanie betą** (domyślnie włączone): szok pozycji = beta względem jej czynnika × szok czynnika, beta
+  z 504 sesji, ograniczona do [0,3; 2,5]. Strata pozycji nie przekracza jej wartości.
+- **Monte Carlo**: symulowane są dzienne zwroty dzisiejszego składu portfela (z gotówką), 2 000 ścieżek,
+  zawsze 10 lat (krótsze horyzonty to odczyt z tych samych ścieżek). Bootstrap blokowy: bloki 20 sesji
+  z zawijaniem. Model z grubymi ogonami: niezależne zwroty t-Studenta, stopnie swobody z kurtozy.
+- **Oczekiwany zwrot** w symulacji to domyślnie założenie 6% rocznie, a nie średnia z historii - dwa lata
+  danych nie pozwalają wiarygodnie oszacować średniej. Można przełączyć na średnią historyczną lub wpisać własną.
+- **Dopłaty** wchodzą na początku każdego miesiąca od drugiego. Obsunięcie w symulacji liczone na stopie
+  zwrotu (dopłaty go nie maskują). Bez podatków i bez zmian składu portfela.
+- **Co jeśli**: kapitał się nie zmienia, zmienia się podział między gotówkę a pozycję; dla CFD kwota to
+  nominał i gotówka zostaje bez zmian. Bez kosztów transakcyjnych. Nowy instrument jest mapowany regułami
+  automatycznymi i jego notowania są dociągane przez dostawcę.
+- **Optymalizacja** (analiza, nie rekomendacja): tylko długie pozycje w akcjach i ETF-ach, które użytkownik
+  już ma; wagi ≥ 0, suma 100%, limit wagi na pozycję (domyślnie 35%). Kowariancja z 504 sesji ściągnięta
+  w 20% do diagonalnej; średnie zwroty ściągnięte w 50% do średniej wszystkich pozycji. Parytet ryzyka
+  rozwiązywany w postaci wypukłej; HRP wg Lópeza de Prado (pojedyncze wiązanie, podział rekurencyjny).

@@ -108,9 +108,10 @@ export function controlInput(c, onChange) {
     sel.addEventListener("change", () => onChange(sel.value));
     wrap.append(el("label", { for: id }, c.label), sel);
   } else if (c.type === "slider") {
-    const out = el("output", { for: id }, fmt(c.value, c.fmt || "num", c.digits));
+    const show = (v) => fmt(v, c.fmt || "num", c.digits) + (c.unit || "");
+    const out = el("output", { for: id }, show(c.value));
     const input = el("input", { type: "range", id, min: c.min, max: c.max, step: c.step ?? 1, value: c.value });
-    input.addEventListener("input", () => { out.textContent = fmt(+input.value, c.fmt || "num", c.digits); });
+    input.addEventListener("input", () => { out.textContent = show(+input.value); });
     input.addEventListener("change", () => onChange(+input.value));
     wrap.append(el("label", { for: id }, c.label), el("div", { class: "slider-row" }, input, out));
   } else if (c.type === "toggle") {
@@ -131,7 +132,7 @@ export function controlInput(c, onChange) {
 
 function controls(b, ctx) {
   const pending = {};
-  const box = el("div", { class: "controls" });
+  const box = el("div", { class: "controls" + (b.grid ? " grid" : "") });
   for (const c of b.items) {
     box.append(controlInput(c, (v) => {
       pending[c.name] = v;

@@ -128,6 +128,13 @@ def test_every_screen_renders(client, sid, name):
     ("perf-summary", {"period": "ytd"}), ("perf-summary", {"period": "12m", "bench": "WIG", "rf": "0.06"}),
     ("perf-benchmarks", {"period": "12m"}), ("perf-attribution", {"period": "ytd"}),
     ("risk-factors", {"freq": "D"}), ("perf-summary", {"period": "bzdura", "rf": "abc", "bench": "XXX"}),
+    ("sim-stress", {"s_SP500": "-30", "s_USDPLN": "12,5", "beta": "false", "detail": "COVID, marzec 2020"}),
+    ("sim-montecarlo", {"years": "10", "method": "t", "contrib": "1000", "target": "500000", "dd": "30"}),
+    ("sim-montecarlo", {"years": "1", "use_hist": "true"}),
+    ("sim-whatif", {"symbol": "__other__", "other": "tsla.us", "side": "buy", "amount": "10000"}),
+    ("sim-whatif", {"symbol": "US500", "side": "sell", "amount": "20000"}),
+    ("sim-whatif", {"symbol": "__other__", "other": ""}),
+    ("sim-optimize", {"max_w": "20", "method": "hrp"}),
 ])
 def test_screen_params(client, sid, name, params):
     r = client.get(f"/api/session/{sid}/screen/{name}", query_string=params)
@@ -230,3 +237,19 @@ def test_jsonable_handles_numpy_and_nan():
                     "e": pd.Series([1.0, float("nan")]), "f": pd.NaT, "g": np.bool_(True)})
     assert out == {"a": None, "b": 3, "c": "2025-01-02", "d": [None, 1.5], "e": [1.0, None], "f": None, "g": True}
     assert math.isfinite(json.loads(json.dumps(out))["d"][1])
+
+
+def test_custom_stress_scenario_matches_engine(client, sid, portfolio):
+    from core import stress
+    out = client.get(f"/api/session/{sid}/screen/sim-stress", query_string={"s_NDX": "-25", "s_USDPLN": "15", "beta": "false"}).get_json()
+    table = next(b for b in out["blocks"] if b["kind"] == "table")
+    custom = next(r for r in table["rows"] if r["name"] == "Własny scenariusz")
+    shocks = {f: 0.0 for f in stress.FACTORS} | {"NDX": -0.25, "USDPLN": 0.15}
+    expected = stress.apply_scenario(portfolio.current_exposure(), portfolio.meta, shocks)["pnl"].sum()
+    assert custom["pnl"] == pytest.approx(expected)
+
+
+def test_whatif_buy_reduces_cash_in_payload(client, sid, portfolio):
+    out = client.get(f"/api/session/{sid}/screen/sim-whatif", query_string={"symbol": "PKN.PL", "side": "buy", "amount": "5000"}).get_json()
+    cash = next(m for b in out["blocks"] if b["kind"] == "metrics" for m in b["items"] if m["label"] == "Gotówka")
+    assert cash["value"] == pytest.approx(float(portfolio.cash.iloc[-1]) - 5000)

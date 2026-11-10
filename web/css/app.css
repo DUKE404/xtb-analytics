@@ -126,6 +126,8 @@ button.row[aria-expanded="true"] .hint { border-color: var(--brass); color: var(
 
 /* ---------- kontrolki ---------- */
 .controls { display: grid; gap: 14px; }
+.controls.grid { grid-template-columns: 1fr 1fr; column-gap: 12px; align-items: end; }
+.controls.grid > .control:has(.toggle), .controls.grid > .control:has(.segmented), .controls.grid > .btn { grid-column: 1 / -1; }
 .control > label, .control > .control-label { display: block; margin-bottom: 6px; font-size: 13px; color: var(--ink-3); }
 .segmented { display: flex; background: var(--panel); border-radius: 9px; padding: 3px; gap: 2px; }
 .segmented button { flex: 1; min-height: 34px; padding: 6px 8px; border-radius: 7px; text-align: center; font-size: 14px; color: var(--ink-2); }
