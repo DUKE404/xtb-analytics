@@ -1,5 +1,5 @@
 @echo off
-REM Uruchomienie jedna komenda w Windows: tworzy venv, instaluje zaleznosci, odpala Streamlit.
+REM Uruchomienie jedna komenda w Windows: tworzy venv, instaluje zaleznosci, startuje serwer aplikacji.
 cd /d "%~dp0"
 
 where python >nul 2>nul
@@ -22,6 +22,6 @@ if not exist .venv\.ok (
   echo ok > .venv\.ok
 )
 
-echo ^>^> Startuje aplikacje. Przegladarka otworzy sie pod adresem http://localhost:8501
-.venv\Scripts\streamlit run app\main.py
+echo ^>^> Startuje aplikacje. Otworz w przegladarce adres pokazany ponizej.
+.venv\Scripts\python -m server
 pause

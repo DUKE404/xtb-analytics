@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Uruchomienie jedną komendą: tworzy venv, instaluje zależności, odpala Streamlit.
+# Uruchomienie lokalne jedną komendą: tworzy venv, instaluje zależności, startuje serwer aplikacji.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -17,5 +17,5 @@ if [ ! -f .venv/.ok ]; then
   touch .venv/.ok
 fi
 
-echo ">> Startuję aplikację. Przeglądarka otworzy się pod adresem http://localhost:8501"
-exec .venv/bin/streamlit run app/main.py
+echo ">> Startuję aplikację. Otwórz w przeglądarce adres pokazany poniżej."
+exec .venv/bin/python -m server

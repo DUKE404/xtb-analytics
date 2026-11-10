@@ -4,14 +4,14 @@ BIN := $(VENV)/bin
 
 .PHONY: run test sample clean
 
-$(VENV)/.ok: requirements.txt
+$(VENV)/.ok: requirements.txt requirements-dev.txt
 	$(PY) -m venv $(VENV)
 	$(BIN)/pip install --upgrade pip
-	$(BIN)/pip install -r requirements.txt
+	$(BIN)/pip install -r requirements-dev.txt
 	touch $(VENV)/.ok
 
 run: $(VENV)/.ok
-	$(BIN)/streamlit run app/main.py
+	$(BIN)/python -m server
 
 test: $(VENV)/.ok
 	$(BIN)/python -m pytest -q

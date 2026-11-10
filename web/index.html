@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>XTB Analytics</title>
+  <meta name="description" content="Analityka portfela dla klienta XTB: wyniki, ryzyko, symulacje, podatki.">
+  <meta name="theme-color" content="#11181f">
+  <meta name="color-scheme" content="dark">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Analytics">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="preload" href="/fonts/ledger-serif.woff" as="font" type="font/woff" crossorigin>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <div id="app">
+    <header class="bar" id="bar">
+      <h1 class="bar-title" id="bar-title">XTB Analytics</h1>
+      <div class="bar-meta" id="bar-meta"></div>
+    </header>
+    <nav class="subnav" id="subnav" aria-label="Sekcje działu" hidden></nav>
+    <main id="main" tabindex="-1">
+      <div class="boot" id="boot">
+        <p class="boot-line">Łączę z serwerem…</p>
+      </div>
+    </main>
+    <nav class="tabs" id="tabs" aria-label="Główna nawigacja" hidden></nav>
+  </div>
+  <div class="sheet-backdrop" id="sheet-backdrop" hidden></div>
+  <noscript><p style="padding:24px;color:#edf0f2">Ta aplikacja wymaga włączonego JavaScriptu.</p></noscript>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

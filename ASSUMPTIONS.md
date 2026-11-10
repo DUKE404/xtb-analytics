@@ -3,15 +3,39 @@
 Lista decyzji podjętych tam, gdzie specyfikacja zostawiała pole do interpretacji. Każde z nich da się
 zmienić w kodzie; najważniejsze są też wystawione w UI (panel boczny, tabela mapowań).
 
+## Zmiana formy w trakcie: aplikacja mobilna (PWA)
+
+- W trakcie budowy zamówienie zmieniło się z aplikacji na komputer (Streamlit) na **aplikację mobilną**.
+  Wybrany wariant: PWA z interfejsem pisanym od zera pod telefon + obliczenia w Pythonie na serwerze
+  w darmowej chmurze. Silnik `core/` i `data/` został bez zmian; interfejs Streamlit usunięto.
+- **Architektura**: `server/` (Flask) wystawia API i serwuje `web/` (HTML/CSS/JS bez etapu budowania i bez
+  zewnętrznych bibliotek - wykresy to własny SVG). Ekrany są składane na serwerze z klocków (`server/blocks.py`),
+  więc nowy ekran to funkcja w Pythonie, a cała logika jest testowalna pytestem.
+- **Dane użytkownika**: eksport z XTB jest zapisany w telefonie (IndexedDB). Na serwer trafia tylko na czas
+  obliczeń i żyje w pamięci procesu (maks. 6 sesji, 3 h bezczynności). Gdy serwer zgubi sesję (uśpienie darmowej
+  instancji), telefon odtwarza ją sam z zapisanego pliku.
+- **Dostęp**: adres w chmurze jest publiczny, więc aplikacja obsługuje hasło (`APP_PASSWORD`). Bez tej zmiennej
+  jest otwarta - tak jest wygodnie lokalnie, ale w chmurze hasło trzeba ustawić.
+- **Nawigacja**: dolny pasek ma najwyżej 5 pozycji, więc 8 działów ze specyfikacji rozłożono na Przegląd,
+  Wyniki, Ryzyko, Symulacje i „Więcej” (Trader, Podatki, AI, Dane i import, Ustawienia). Długie działy mają
+  pod-zakładki u góry.
+- **Tooltipy**: na telefonie nie ma najechania kursorem, więc objaśnienie „co to znaczy” rozwija się po
+  dotknięciu wiersza z liczbą.
+- **Kolory**: zysk/plus jest niebieski, strata/minus czerwona (zamiast zielony/czerwony) - para czytelna także
+  dla osób z zaburzeniami widzenia barw. Paleta serii sprawdzona walidatorem na tle aplikacji.
+- **Krój pisma** nagłówków i zdań to podzbiór znaków kroju Lora (licencja SIL OFL 1.1), dołączony pod zmienioną
+  nazwą „Ledger Serif”, jak wymaga licencja dla wersji zmodyfikowanych. Liczby i interfejs: krój systemowy.
+
 ## Środowisko budowy
 
-- Aplikacja powstała w środowisku bez internetu i bez możliwości instalacji pakietów. Moduły `core/` i `data/`
-  są przetestowane pytestem. Interfejs Streamlit był tam sprawdzany testem dymnym na atrapach bibliotek
-  (`tests/fakes/`); u użytkownika `make test` uruchamia prawdziwy test `streamlit.testing.AppTest`.
+- Aplikacja powstała w środowisku bez internetu i bez możliwości instalacji pakietów. Silnik i API są
+  przetestowane pytestem, a interfejs mobilny - w prawdziwej przeglądarce (Chrome bez okna, ekran 390×844,
+  `tests/test_ui.py`), łącznie z wgrywaniem pliku i edycją tickerów.
 - Pobieranie na żywo (yfinance, Stooq, NBP, biblioteka K. Frencha) nie mogło być tam wywołane. Przetestowane
-  są parsery formatów odpowiedzi i logika cache/fallbacku, nie same połączenia.
+  są parsery formatów odpowiedzi i logika cache/fallbacku, nie same połączenia. Serwer produkcyjny (gunicorn)
+  i wdrożenie na Render też nie były tam uruchamiane.
 - `riskfolio-lib` zastąpiono własną implementacją (min-variance, max Sharpe, risk parity, HRP) - specyfikacja
-  to dopuszcza, a biblioteka ciągnie ciężkie zależności (cvxpy), które psują instalację „jedną komendą”.
+  to dopuszcza, a biblioteka ciągnie ciężkie zależności (cvxpy), które nie mieszczą się w darmowej instancji.
 - HMM do reżimów rynkowych zaimplementowano w numpy (bez `hmmlearn`), regresję OLS także (bez `statsmodels`).
 
 ## Etap 1 - import i rekonstrukcja portfela
@@ -61,3 +85,23 @@ zmienić w kodzie; najważniejsze są też wystawione w UI (panel boczny, tabela
   (ilość z wczoraj × zmiana ceny × kurs z wczoraj), efekt walutowy (wartość w walucie × zmiana kursu, z członem
   mieszanym), dywidendy netto i resztę (koszty, swapy, intraday, różnica cena transakcji/zamknięcie). Wkłady
   w TWR łańcuchowane tak, by sumowały się dokładnie do TWR.
+
+## Etap 3 - ryzyko
+
+- **Podejście**: dzisiejsze ekspozycje w PLN × historyczne dzienne zwroty instrumentów widziane z PLN
+  (ostatnie 504 sesje, także sprzed zakupu). Dla CFD czynnikiem ryzyka jest sama cena instrumentu - nominał
+  CFD nie niesie ryzyka walutowego, tylko jego wynik.
+- **VaR/CVaR** podawane jako strata dodatnia. Historyczny: kwantyl empiryczny; dla 10 dni nakładające się
+  okna 10-dniowe (przy krótkiej historii skalowanie √10). Parametryczny: rozkład normalny, średnia = 0
+  (ostrożnie). Monte Carlo: 20 000 losowań skorelowanych zwrotów wszystkich pozycji; gdy kurtoza historii jest
+  dodatnia, z wielowymiarowego rozkładu t-Studenta o stopniach swobody dopasowanych metodą momentów.
+- **Efektywna liczba zakładów**: definicja Meucciego (entropia rozkładu wariancji po składowych głównych).
+  Przy portfelu samych akcji wychodzi nisko, bo dominuje wspólny czynnik rynkowy - to cecha miary, nie błąd.
+- **Koncentracja** (top 5, HHI) liczona po wartości bezwzględnej ekspozycji, bez gotówki.
+- **Płynność**: dni do zamknięcia = ilość / (20% średniego wolumenu z 30 sesji). Dla CFD nie liczona.
+- **Czynniki Fama-French 5 + momentum**: zwroty portfela przeliczone na USD, domyślnie dane tygodniowe
+  (łagodzą różnicę godzin sesji PL/USA). Czynniki są amerykańskie - dla spółek z GPW to przybliżenie.
+- **CFD**: zabezpieczeniem jest tylko gotówka + niezrealizowany wynik na CFD (wartość akcji nie jest liczona -
+  założenie ostrożne). Stop out przy poziomie depozytu 50%. Odległość do stop outu = strata, która do niego
+  prowadzi, podzielona przez nominał brutto CFD (jednolity ruch przeciw wszystkim pozycjom). Roczny koszt
+  swapów = suma swapów / (nominał × czas utrzymywania).

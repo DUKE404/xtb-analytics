@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest>=8.0
+# opcjonalnie, do testu interfejsu w przeglądarce: pip install playwright && playwright install chromium
+playwright>=1.45

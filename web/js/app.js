@@ -1,0 +1,215 @@
+// Start aplikacji, nawigacja i ładowanie ekranów.
+
+import * as api from "./api.js";
+import { renderScreen } from "./blocks.js";
+import { errorNote, importView, loginView, mappingView, moreView, settingsView } from "./client.js";
+import { el, fmtDate } from "./format.js";
+
+const $ = (id) => document.getElementById(id);
+const main = $("main"), tabsEl = $("tabs"), subnav = $("subnav"), barTitle = $("bar-title"), barMeta = $("bar-meta");
+
+const ICONS = {
+  home: "M4 11.5 12 5l8 6.5M6.5 10v9h11v-9",
+  chart: "M4 19h16M7 16v-5M12 16V7M17 16v-8",
+  shield: "M12 4l7 2.5v5c0 4.2-2.9 7.3-7 8.5-4.1-1.2-7-4.3-7-8.5v-5L12 4z",
+  dice: "M5 5h14v14H5zM9 9h.01M15 15h.01M15 9h.01M9 15h.01M12 12h.01",
+  more: "M6 12h.01M12 12h.01M18 12h.01",
+};
+const CLIENT_SCREENS = new Set(["import", "mapping", "settings"]);
+const screenParams = new Map();   // parametry kontrolek zapamiętane per ekran
+let loadToken = 0;
+
+function sections() {
+  const nav = api.state.health.nav;
+  return { tabs: nav.tabs, more: nav.more, all: [...nav.tabs, ...nav.more] };
+}
+
+function parseRoute() {
+  const [sec, scr] = location.hash.replace(/^#\/?/, "").split("/");
+  return { sec: sec || "", scr: scr || "" };
+}
+
+function go(sec, scr = "") {
+  const target = `#/${sec}${scr ? "/" + scr : ""}`;
+  if (location.hash === target) route(); else location.hash = target;
+}
+
+function icon(name) {
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  s.setAttribute("viewBox", "0 0 24 24");
+  s.setAttribute("aria-hidden", "true");
+  const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  p.setAttribute("d", ICONS[name] || ICONS.more);
+  if (name === "dice" || name === "more") p.setAttribute("stroke-width", name === "more" ? 2.6 : 1.6);
+  s.append(p);
+  return s;
+}
+
+function drawTabs(activeId) {
+  const { tabs } = sections();
+  const items = [...tabs.map((t) => ({ id: t.id, label: t.label, icon: t.icon })), { id: "more", label: "Więcej", icon: "more" }];
+  tabsEl.replaceChildren(...items.map((t) => {
+    const b = el("button", { type: "button", "aria-current": t.id === activeId ? "page" : null }, icon(t.icon), el("span", {}, t.label));
+    b.addEventListener("click", () => go(t.id));
+    return b;
+  }));
+  tabsEl.hidden = false;
+}
+
+function drawSubnav(section, activeScreen) {
+  const list = section?.screens || [];
+  if (list.length < 2) { subnav.hidden = true; subnav.replaceChildren(); return; }
+  subnav.replaceChildren(...list.map((s) => {
+    const b = el("button", { type: "button", "aria-current": s.id === activeScreen ? "page" : null }, s.label);
+    b.addEventListener("click", () => go(section.id, s.id));
+    return b;
+  }));
+  subnav.hidden = false;
+  const cur = subnav.querySelector('[aria-current="page"]');
+  if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest", inline: "center" });
+}
+
+function drawBar(titleText) {
+  barTitle.textContent = titleText;
+  document.title = `${titleText} – XTB Analytics`;
+  const s = api.state.session;
+  barMeta.replaceChildren();
+  if (!s) return;
+  barMeta.append(el("div", {}, `stan na ${fmtDate(s.as_of)}`));
+  if (s.is_demo) barMeta.append(el("div", { class: "demo" }, "dane przykładowe"));
+}
+
+function skeleton() {
+  return el("div", { class: "screen skeleton", "aria-busy": "true" }, el("div"), el("div"), el("div"), el("div"), el("div"), el("div"));
+}
+
+function show(node) {
+  main.replaceChildren(node);
+  main.classList.remove("is-loading");
+}
+
+function showLogin() {
+  tabsEl.hidden = true;
+  subnav.hidden = true;
+  drawBar("XTB Analytics");
+  show(loginView(() => start()));
+}
+
+function reloadAll() {
+  screenParams.clear();
+  route();
+}
+
+async function loadServerScreen(name) {
+  const token = ++loadToken;
+  const had = main.querySelector(".screen:not(.skeleton)") && main.dataset.screen === name;
+  if (had) main.classList.add("is-loading"); else show(skeleton());   // przy zmianie parametrów trzymamy poprzedni widok
+  main.dataset.screen = name;
+  try {
+    const payload = await api.screen(name, screenParams.get(name) || {});
+    if (token !== loadToken) return;
+    const y = had ? window.scrollY : 0;
+    show(renderScreen(payload, {
+      onParams: (patch) => {
+        screenParams.set(name, { ...(screenParams.get(name) || {}), ...patch });
+        loadServerScreen(name);
+      },
+      onDownload: async (path, filename, btn) => {
+        btn.disabled = true;
+        try { await api.download(path, filename); } catch (err) { btn.after(errorNote(err)); } finally { btn.disabled = false; }
+      },
+    }));
+    drawBar(barTitle.textContent);
+    window.scrollTo(0, y);
+  } catch (err) {
+    if (token !== loadToken) return;
+    if (err.status === 401) return showLogin();
+    const retry = el("button", { class: "btn quiet", type: "button" }, "Spróbuj ponownie");
+    retry.addEventListener("click", () => loadServerScreen(name));
+    show(el("div", { class: "screen" }, errorNote(err), retry));
+  }
+}
+
+function route() {
+  if (!api.state.health || !api.state.session) return;
+  const { tabs, more, all } = sections();
+  let { sec, scr } = parseRoute();
+  ++loadToken;
+
+  if (sec === "more") {
+    drawTabs("more");
+    drawSubnav(null);
+    drawBar("Więcej");
+    main.dataset.screen = "more";
+    show(moreView(more, (id) => go(id)));
+    window.scrollTo(0, 0);
+    return;
+  }
+  let section = all.find((s) => s.id === sec);
+  if (!section) { section = tabs[0]; sec = section.id; scr = ""; }
+  const screens = section.screens || [{ id: section.id, label: section.label }];
+  const screen = screens.find((s) => s.id === scr) || screens[0];
+  const inMore = more.includes(section);
+  drawTabs(inMore ? "more" : section.id);
+  drawSubnav(section, screen.id);
+  drawBar(section.label);
+
+  if (CLIENT_SCREENS.has(screen.id)) {
+    main.dataset.screen = screen.id;
+    const view = screen.id === "import" ? importView(route, reloadAll)
+      : screen.id === "mapping" ? mappingView(reloadAll) : settingsView(reloadAll, showLogin);
+    show(view);
+    drawBar(section.label);
+    window.scrollTo(0, 0);
+    return;
+  }
+  loadServerScreen(screen.id);
+}
+
+function bootMessage(text, sub = "") {
+  show(el("div", { class: "boot" }, el("p", { class: "boot-line" }, el("span", { class: "pulse" }), text), sub ? el("p", { class: "boot-sub" }, sub) : null));
+}
+
+async function start() {
+  bootMessage("Przeliczam portfel…", "Odtwarzam historię dzień po dniu i liczę ryzyko.");
+  try {
+    await api.createSession();
+  } catch (err) {
+    if (err.status === 401) return showLogin();
+    if (api.state.mode === "upload") {
+      // zapisany plik nie daje się już wczytać (albo brak notowań) - pokaż dane przykładowe i powiedz dlaczego
+      try { await api.setMode("demo"); } catch { /* obsłużone niżej */ }
+      if (api.state.session) {
+        route();
+        main.prepend(errorNote(new Error(`Nie udało się wczytać zapisanego eksportu: ${err.message}\nPokazuję dane przykładowe. Wgraj plik ponownie w „Więcej → Dane i import”.`)));
+        return;
+      }
+    }
+    const retry = el("button", { class: "btn quiet", type: "button" }, "Spróbuj ponownie");
+    retry.addEventListener("click", start);
+    show(el("div", { class: "screen" }, errorNote(err), retry));
+    return;
+  }
+  route();
+}
+
+async function boot() {
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+    navigator.serviceWorker.register("/sw.js").catch(() => { /* aplikacja działa także bez trybu offline */ });
+  }
+  if (!boot.wired) { window.addEventListener("hashchange", route); boot.wired = true; }
+  try {
+    await api.waitForServer((sec) => {
+      if (sec >= 3) bootMessage("Budzę serwer…", `Darmowa instancja zasypia po kwadransie bezczynności. Zwykle wstaje w niecałą minutę (${sec} s).`);
+    });
+  } catch (err) {
+    const retry = el("button", { class: "btn quiet", type: "button" }, "Spróbuj ponownie");
+    retry.addEventListener("click", () => { bootMessage("Łączę z serwerem…"); boot(); });
+    show(el("div", { class: "screen" }, el("div", { style: "height:22vh" }), errorNote(err), retry));
+    return;
+  }
+  if (api.state.health.auth_required && !api.state.token) return showLogin();
+  start();
+}
+
+boot();

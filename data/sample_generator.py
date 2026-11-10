@@ -182,7 +182,7 @@ def generate(seed: int = 12, start: str = "2024-11-04", as_of: str = "2026-11-06
         if forced or (rng.random() < 0.14 and len(cfds) < 3 and di > 3 and cash > 3000 and di < len(dates) - 5):
             sym = forced or cfd_syms[int(rng.choice(len(cfd_syms), p=cfd_p))]
             lo, hi = CFD_VOLUMES[sym]
-            vol = rng.uniform(lo, hi) * (1.7 if last_cfd_loss else 1.0)
+            vol = lo * 1.5 if forced else rng.uniform(lo, hi) * (1.7 if last_cfd_loss else 1.0)
             vol = round(vol, 2) if sym != "W20" else round(vol, 1)
             vol = max(vol, 0.01)
             direction = 1 if rng.random() < 0.65 else -1
