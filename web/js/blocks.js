@@ -54,7 +54,7 @@ function table(b) {
   const head = el("tr", {}, b.columns.map((c) => el("th", { class: numeric(c) ? null : "t", scope: "col" }, c.label)));
   const body = el("tbody");
   const draw = (rows) => body.replaceChildren(...rows.map((r) => el("tr", {}, b.columns.map((c, i) =>
-    el("td", { class: (!numeric(c) && i > 0 ? "t" : "") + tone(r[c.key], c.fmt, false) || null }, fmt(r[c.key], c.fmt, c.digits))))));
+    el("td", { class: (!numeric(c) && i > 0 ? "t" : "") + tone(r[c.key], c.fmt, c.signed) || null }, fmt(r[c.key], c.fmt, c.digits, c.signed))))));
   const limit = b.limit || 12;
   draw(b.rows.slice(0, limit));
   const wrap = el("div", { class: "table-wrap" }, el("table", { class: "data" }, el("thead", {}, head), body));

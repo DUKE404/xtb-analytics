@@ -106,6 +106,20 @@ Przycisk na pasku u góry otwiera **Widok portfela** - ustawienia wspólne dla w
 Okres wybierzesz też **jednym kliknięciem z paska „Okres” nad treścią każdego ekranu** (Całość / YTD / 12M / 24M /
 3L / Zakres dat…). Obok jest przełącznik „Bez CFD”.
 
+### Kalendarz: stopy dzienne i terminy wyników
+
+Dział **Kalendarz** (Więcej → Kalendarz, na komputerze w bocznym panelu):
+
+- **Stopy dzienne** - każdy miesiąc jako kalendarz; każda sesja to pole w kolorze wyniku (zielony zysk,
+  czerwony strata, mocniejszy kolor = większy ruch). Dotknięcie dnia pokazuje stopę, wynik w złotych
+  i ruch benchmarku. Do tego: odsetek sesji na plusie, najlepszy i najgorszy dzień, średni dzień wzrostowy
+  i spadkowy, najdłuższe serie, średnia według dnia tygodnia, ruchy każdej pozycji w wybranej sesji
+  i tabela ostatnich 30 sesji z porównaniem do benchmarku.
+- **Wyniki spółek** - kiedy spółki z portfela publikują wyniki (z opisem, czy to kwartał, czy wyniki
+  roczne - według roku obrotowego spółki), konsensus EPS i przychodów, waga spółki w portfelu,
+  zaznaczone dni w kalendarzu, nadchodzące dywidendy (dzień ustalenia prawa) oraz ostatnie wyniki
+  względem oczekiwań (niespodzianka EPS). Dane z Yahoo Finance.
+
 ### Fundusz: tearsheet, long/short, limity
 
 Dział **Fundusz** układa te same dane tak, jak raportuje je fundusz long/short:
@@ -273,6 +287,9 @@ tests/    pytest: silnik, API, interfejs w przeglądarce (Playwright)
 - Przy rachunkach z różnymi datami raportu portfel jest liczony na datę najnowszego.
 - Mnożniki i stawki depozytu CFD pochodzą z tabeli wbudowanej w aplikację - sprawdź je dla swoich instrumentów
   w zakładce Tickery.
+- **Terminy wyników**: Yahoo podaje część dat jako szacunkowe (oznaczone w tabeli). Kwartał raportu
+  wyznaczam z daty publikacji i końca roku obrotowego - rzadko (np. przy zmianie roku obrotowego) może się
+  pomylić. Pobieranie terminów na żywo nie było testowane (brak sieci w środowisku budowy).
 - **Spółki**: dane z Yahoo Finance nie były testowane na żywo (środowisko budowy nie ma sieci) - testy używają
   danych podstawionych. Dla małych spółek i części rynków Yahoo nie podaje prognoz ani cen docelowych.
   Odwrócony DCF to model jednofazowy plus wzrost wieczny; dla banków, ubezpieczycieli i spółek z ujemnym FCF

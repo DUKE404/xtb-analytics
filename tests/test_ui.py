@@ -445,3 +445,36 @@ def test_period_bar_is_always_visible_and_switches_period(page):
     page.locator("#viewbar .range").tap()
     page.wait_for_selector(".sheet #view-from")
     assert not page.errors, page.errors
+
+
+def test_calendar_of_daily_returns(page, base_url):
+    page.goto(base_url + "/#/calendar/calendar-days")
+    wait_ready(page)
+    assert page.inner_text("#bar-title") == "Kalendarz"
+    cells = page.locator(".cal-day:not(.off)")
+    assert cells.count() > 60                                                    # 6 miesięcy sesji
+    colored = page.evaluate("[...document.querySelectorAll('.cal-day:not(.off)')].filter(b => b.style.background.includes('color-mix')).length")
+    assert colored > 50
+    cells.nth(3).tap()
+    assert "zł" in page.inner_text(".cal .readout") and ":" in page.inner_text(".cal .readout")
+    w = page.locator(".cal-day").first.bounding_box()["width"]
+    assert w >= 38                                                               # pole na tyle duże, żeby trafić palcem
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    shot(page, "99-calendar-days")
+    page.locator("#subnav button", has_text="Wyniki spółek").tap()
+    wait_ready(page)
+    assert page.inner_text(".statement").startswith("Najbliżej:") and page.locator(".cal-day.mark").count() >= 1
+    page.locator(".cal-day.mark").first.tap()
+    assert "wyniki" in page.inner_text(".cal .readout") or "dywidend" in page.inner_text(".cal .readout")
+    shot(page, "99-calendar-events")
+    assert not page.errors, page.errors
+
+
+def test_calendar_on_desktop(desktop, base_url):
+    desktop.goto(base_url + "/#/calendar/calendar-days")
+    wait_ready(desktop)
+    months = desktop.locator(".cal-month")
+    a, b = months.nth(0).bounding_box(), months.nth(1).bounding_box()
+    assert abs(a["y"] - b["y"]) < 2                                              # miesiące obok siebie
+    shot(desktop, "d4-calendar", full=False)
+    assert not desktop.errors, desktop.errors
