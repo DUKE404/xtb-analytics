@@ -31,6 +31,18 @@ from server.sessions import SessionStore
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB_DIR = os.path.join(ROOT, "web")
 VERSION = "1.1.0"
+
+
+def build_id(root: str) -> str:
+    """Odcisk plików interfejsu i listy ekranów. Zmienia się przy każdym wdrożeniu, które coś zmienia -
+    otwarta na telefonie stara wersja aplikacji porównuje go i sama się przeładowuje."""
+    h = hashlib.sha1(",".join(sorted(SCREENS)).encode())
+    for base, _, names in sorted(os.walk(root)):
+        for n in sorted(names):
+            if n.endswith((".js", ".css", ".html", ".webmanifest")):
+                with open(os.path.join(base, n), "rb") as fh:
+                    h.update(n.encode() + fh.read())
+    return h.hexdigest()[:12]
 MAX_UPLOAD_MB = 40
 
 
@@ -150,9 +162,11 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
         return resp
 
     # ------------------------------------------------------------------ API
+    build = build_id(WEB_DIR)
+
     @app.get("/api/health")
     def health():
-        return ok({"ok": True, "version": VERSION, "auth_required": bool(password()), "ai_enabled": ai_enabled(),
+        return ok({"ok": True, "version": VERSION, "build": build, "auth_required": bool(password()), "ai_enabled": ai_enabled(),
                    "nav": nav_config(ai_enabled()),
                    "settings": {"rf": DEFAULT_RF, "bench": DEFAULT_BENCH, "bench_choices": [
                        {"value": k, "label": _bench_label(k)} for k in BENCH_CHOICES]}})

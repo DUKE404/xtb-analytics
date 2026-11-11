@@ -173,6 +173,11 @@ async function loadServerScreen(name) {
   } catch (err) {
     if (token !== loadToken) return;
     if (err.status === 401) return showLogin();
+    if (err.code === "no_screen") {
+      // ekran zniknął po wdrożeniu nowej wersji: przeładuj aplikację albo wróć na Przegląd
+      if (await api.newerBuild()) return location.reload();
+      return go("overview");
+    }
     const retry = el("button", { class: "btn quiet", type: "button" }, "Spróbuj ponownie");
     retry.addEventListener("click", () => loadServerScreen(name));
     show(el("div", { class: "screen" }, errorNote(err), retry));
@@ -247,7 +252,14 @@ async function boot() {
   if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
     navigator.serviceWorker.register("/sw.js").catch(() => { /* aplikacja działa także bez trybu offline */ });
   }
-  if (!boot.wired) { window.addEventListener("hashchange", route); boot.wired = true; }
+  if (!boot.wired) {
+    window.addEventListener("hashchange", route);
+    // aplikacja z ekranu głównego bywa otwarta tygodniami: po powrocie do niej sprawdź, czy nie ma nowej wersji
+    document.addEventListener("visibilitychange", async () => {
+      if (document.visibilityState === "visible" && api.state.health && await api.newerBuild()) location.reload();
+    });
+    boot.wired = true;
+  }
   try {
     await api.waitForServer((sec) => {
       if (sec >= 3) bootMessage("Budzę serwer…", `Darmowa instancja zasypia po kwadransie bezczynności. Zwykle wstaje w niecałą minutę (${sec} s).`);

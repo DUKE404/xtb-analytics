@@ -56,6 +56,18 @@ export async function waitForServer(onWait) {
   }
 }
 
+/** Czy na serwerze jest nowsza wersja aplikacji niż ta otwarta w telefonie (porównanie odcisku `build`). */
+export async function newerBuild() {
+  const before = state.health?.build;
+  try {
+    const h = await request("/api/health", { timeout: 8000 });
+    if (!before || h.build === before) { state.health = h; return false; }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function login(password) {
   const out = await request("/api/login", { method: "POST", json: { password } });
   state.token = out.token || "";

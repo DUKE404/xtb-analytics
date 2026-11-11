@@ -281,3 +281,11 @@ def test_tax_screen_carries_disclaimer_and_downloads(client, sid):
     for b in out["blocks"]:
         if b["kind"] == "download":
             assert client.get(f"/api/session/{sid}/{b['path']}").status_code == 200
+
+
+def test_health_reports_build_and_unknown_screen_code(client, sid):
+    from server.app import WEB_DIR, build_id
+    h = client.get("/api/health").get_json()
+    assert h["build"] == build_id(WEB_DIR) and len(h["build"]) == 12
+    r = client.get(f"/api/session/{sid}/screen/calendar-days")
+    assert r.status_code == 404 and r.get_json()["code"] == "no_screen"

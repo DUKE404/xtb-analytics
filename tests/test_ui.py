@@ -445,3 +445,19 @@ def test_period_bar_is_always_visible_and_switches_period(page):
     page.locator("#viewbar .range").tap()
     page.wait_for_selector(".sheet #view-from")
     assert not page.errors, page.errors
+
+
+def test_stale_screen_link_falls_back_to_overview(page, base_url):
+    """Link do ekranu, którego już nie ma (np. po wycofaniu zakładki), prowadzi na Przegląd zamiast błędu."""
+    page.goto(base_url + "/#/calendar/calendar-days")
+    wait_ready(page)
+    assert page.inner_text("#bar-title") == "Przegląd" and "Nie ma ekranu" not in page.inner_text("main")
+    # stara wersja aplikacji ma w pamięci nawigację z nieistniejącym ekranem -> po błędzie wraca na Przegląd
+    page.evaluate("""() => import('/js/api.js').then((api) => {
+        api.state.health.nav.more.unshift({id: 'calendar', label: 'Kalendarz', screens: [{id: 'calendar-days', label: 'Dni'}]});
+    })""")
+    page.evaluate("location.hash = '#/calendar/calendar-days'")
+    page.wait_for_function("document.querySelector('#bar-title')?.textContent === 'Przegląd'", timeout=30000)
+    wait_ready(page)
+    assert "Nie ma ekranu" not in page.inner_text("main")
+    assert not [e for e in page.errors if "404" not in e], page.errors
