@@ -90,6 +90,21 @@ button { background: none; border: 0; padding: 0; cursor: pointer; text-align: i
 }
 .subnav button[aria-current="page"] { color: var(--ink); border-bottom-color: var(--brass); font-weight: 600; }
 
+/* ---------- pasek okresu analizy ---------- */
+.viewbar {
+  display: flex; align-items: center; gap: 6px; padding: 10px var(--gutter) 2px; overflow-x: auto; scrollbar-width: none;
+}
+.viewbar::-webkit-scrollbar { display: none; }
+.viewbar-label { flex: none; margin-right: 4px; font-size: 12.5px; color: var(--ink-3); }
+.viewbar button {
+  flex: none; min-height: 32px; padding: 5px 12px; border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--ink-2);
+  box-shadow: inset 0 0 0 1px var(--line-strong); white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.viewbar button[aria-pressed="true"] { background: var(--brass); color: var(--brass-ink); box-shadow: none; font-weight: 600; }
+.viewbar button.opt { margin-left: 8px; }
+.viewbar button.busy { opacity: .55; }
+.viewbar button:disabled { cursor: progress; }
+
 /* ---------- treść ---------- */
 main { padding: 6px var(--gutter) calc(var(--tabs-h) + var(--safe-bottom) + 28px); outline: none; }
 main.is-loading > .screen { opacity: .45; transition: opacity .15s; }
@@ -320,7 +335,10 @@ pre.json { margin: 0; padding: 12px; background: var(--panel); border-radius: 8p
   :root { --gutter: 36px; --side: 236px; --bar-h: 64px; }
   body { font-size: 15.5px; }
   #app { max-width: none; margin: 0; padding-left: var(--side); }
-  .bar, .subnav, main { max-width: 1360px; margin-left: auto; margin-right: auto; }
+  .bar, .subnav, .viewbar, main { max-width: 1360px; margin-left: auto; margin-right: auto; }
+  .viewbar { padding-top: 14px; }
+  .viewbar button:hover { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink-3); }
+  .viewbar button[aria-pressed="true"]:hover { color: var(--brass-ink); box-shadow: none; }
   .bar-title { font-size: 26px; }
   .view-btn { max-width: none; font-size: 13.5px; padding: 6px 10px 6px 12px; }
   main { padding-bottom: 64px; }

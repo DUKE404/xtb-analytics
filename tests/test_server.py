@@ -103,7 +103,7 @@ def test_health_and_nav(client):
     from server.screens import CLIENT_SCREENS
     more = [s["id"] for m in h["nav"]["more"] for s in m["screens"]]
     assert set(more) <= set(SCREENS) | CLIENT_SCREENS
-    assert {c["value"] for c in h["settings"]["bench_choices"]} == {"MSCIW", "SP500", "NDX", "WIG20"}
+    assert {c["value"] for c in h["settings"]["bench_choices"]} == {"MSCIW", "SP500", "NDX"}
 
 
 def test_session_meta(client, sid):

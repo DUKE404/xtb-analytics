@@ -101,13 +101,13 @@ export function periodLabel(s) {
 }
 
 /** Arkusz z paska tytułu: rachunki, waluta, CFD i okres analizy - jeden widok dla wszystkich ekranów. */
-export function viewSheet(reloadAll) {
+export function viewSheet(reloadAll, opts = {}) {
   const s = api.state.session;
   openSheet("Widok portfela", (close) => {
     let base = s.base;
     let excludeCfd = !!s.exclude_cfd;
     const isPreset = (v) => s.since_choices.some((o) => o.value === v);
-    let period = s.until || (s.since && !isPreset(s.since)) ? "custom" : (s.since || "");
+    let period = opts.custom || s.until || (s.since && !isPreset(s.since)) ? "custom" : (s.since || "");
     const iso = (v) => (v ? String(v).slice(0, 10) : "");
     const picked = new Set(s.accounts.filter((a) => a.selected).map((a) => a.id));
     const status = el("div");

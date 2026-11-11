@@ -57,7 +57,7 @@ def test_statement_and_estimate_parsers():
 # --------------------------------------------------------------------------- portfel bez CFD i okres analizy
 
 def test_benchmarks_have_nasdaq_instead_of_wig():
-    assert BENCHMARK_KEYS == ["WIG20", "SP500", "NDX", "MSCIW"]
+    assert BENCHMARK_KEYS == ["SP500", "NDX", "MSCIW"]
 
 
 def test_cfd_carve_out_turns_cfd_results_into_flows():

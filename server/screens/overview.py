@@ -28,7 +28,8 @@ def overview(ctx, p) -> dict:
         lead = "Portfel jest w gotówce - nie ma dziś otwartych pozycji, które mogłyby tracić na wartości."
     pnl = pf.total_pnl()
     sub = (f"Od {pf.dates[0].strftime('%d.%m.%Y')} "
-           f"{'zarobił' if pnl >= 0 else 'stracił'} {B.f_pln(abs(pnl))} przy {B.f_pln(pf.invested_capital())} wpłat netto.")
+           f"{'zarobił' if pnl >= 0 else 'stracił'} {B.f_pln(abs(pnl))} przy {B.f_pln(pf.invested_capital())} "
+           + ("kapitału na start okresu i wpłat netto." if ctx.since_date is not None else "wpłat netto."))
 
     eq = pd.DataFrame({"Portfel": pf.equity, "Wpłaty netto": pf.flows.cumsum()})
     dd = perf.drawdown_series(pf.returns).to_frame("Obsunięcie")

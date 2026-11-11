@@ -103,6 +103,22 @@ Przycisk na pasku u góry otwiera **Widok portfela** - ustawienia wspólne dla w
   nie obciąża statystyk. Gdy ustawisz datę końcową, skład i ryzyko są liczone na ten dzień.
 - Podatki zawsze liczą całą historię i wszystkie instrumenty.
 
+Okres wybierzesz też **jednym kliknięciem z paska „Okres” nad treścią każdego ekranu** (Całość / YTD / 12M / 24M /
+3L / Zakres dat…). Obok jest przełącznik „Bez CFD”.
+
+### Fundusz: tearsheet, long/short, limity
+
+Dział **Fundusz** układa te same dane tak, jak raportuje je fundusz long/short:
+
+- **Tearsheet** - CAGR, zmienność, Sharpe, Sortino, Calmar, beta, alfa, information ratio, przechwytywanie
+  wzrostów i spadków benchmarku, statystyki miesięcy, tail ratio, omega, kroczący Sharpe / zmienność / beta
+  oraz tabela największych obsunięć (szczyt, dołek, odrobienie).
+- **Long / short** - ekspozycja długa, krótka, brutto i netto jako część NAV, beta portfela z bet pozycji,
+  ekspozycja sektorowa long vs short, wkład każdej pozycji w betę i **kalkulator zabezpieczenia bety**
+  (jaki nominał krótkiej pozycji na indeksie sprowadza betę do wybranego poziomu).
+- **Limity** - monitor limitów ryzyka z własnymi progami: pozycja, sektor, top 5, ekspozycja brutto, VaR,
+  obsunięcie, minimalna gotówka. Status: w normie / blisko / przekroczony.
+
 ### Spółki: odwrócony DCF, prognozy, ceny docelowe
 
 Zakładka **Spółki** pokazuje dla wybranej akcji z portfela:
@@ -272,7 +288,7 @@ tests/    pytest: silnik, API, interfejs w przeglądarce (Playwright)
 - Dni, w których wartość portfela wychodzi ujemna (błąd danych), są pomijane w stopach zwrotu i zgłaszane
   z nazwą pozycji, która to powoduje.
 - Dni wolne na jednej giełdzie przy otwartej drugiej są wypełniane ostatnim zamknięciem.
-- Benchmarki (WIG20, S&P 500, Nasdaq 100) są indeksami cenowymi, bez dywidend - porównanie z nimi jest dla portfela lekko korzystne. WIG usunięto, bo darmowe źródła go nie podają.
+- Benchmarki (S&P 500, Nasdaq 100) są indeksami cenowymi, bez dywidend - porównanie z nimi jest dla portfela lekko korzystne. WIG usunięto, bo darmowe źródła go nie podają.
 
 **Modele**
 

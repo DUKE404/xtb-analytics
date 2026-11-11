@@ -14,8 +14,8 @@ from core.portfolio import Portfolio, reconstruct
 from data.xtb_parser import XTBExport
 
 HISTORY_PAD_DAYS = 400          # ile historii przed pierwszą transakcją pobieramy (ryzyko, bety)
-BENCHMARK_KEYS = ["WIG20", "SP500", "NDX", "MSCIW"]     # WIG usunięty: żadne darmowe źródło go nie podaje
-FACTOR_PROXY_KEYS = ["DAX", "GOLD", "OIL"]
+BENCHMARK_KEYS = ["SP500", "NDX", "MSCIW"]     # polskie indeksy usunięte: darmowe źródła podają je zawodnie
+FACTOR_PROXY_KEYS = ["WIG20", "DAX", "GOLD", "OIL"]     # WIG20 tylko dla portfeli z polskimi akcjami
 BASE_CHOICES = ["PLN", "USD", "EUR"]
 MONEY_COLS = ("purchase_value", "sale_value", "margin", "commission", "swap", "rollover", "gross_pl")
 
@@ -125,7 +125,10 @@ def load_market(export: XTBExport, mapping: pd.DataFrame, provider, as_of=None, 
     fx_base[base] = 1.0
 
     b_local, b_base, b_cur = {}, {}, {}
+    polish = bool(len(mp)) and bool(((mp.reindex(symbols)["country"] == "Polska") | (mp.reindex(symbols)["currency"] == "PLN")).any())
     for key in BENCHMARK_KEYS + FACTOR_PROXY_KEYS:
+        if key == "WIG20" and not polish:
+            continue                      # bez polskich pozycji indeks nie jest do niczego potrzebny
         try:
             s, cur = provider.benchmark(key, start, as_of)
             s = s.dropna()

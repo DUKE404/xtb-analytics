@@ -424,3 +424,24 @@ def test_view_sheet_period_and_cfd_carve_out(desktop):
     wait_ready(page)
     assert "31.03.2026" in page.inner_text("#bar-meta .view-btn") and "bez CFD" in page.inner_text("#bar-meta .view-btn")
     assert not page.errors, page.errors
+
+
+def test_period_bar_is_always_visible_and_switches_period(page):
+    """Okres analizy wybiera się jednym dotknięciem z paska nad treścią - na każdym ekranie."""
+    chips = page.locator("#viewbar button")
+    assert page.locator("#viewbar").is_visible() and chips.first.inner_text() == "Całość"
+    assert chips.first.get_attribute("aria-pressed") == "true"
+    start_all = page.inner_text(".statement .sub")
+    page.locator("#viewbar button", has_text="12M").tap()
+    page.wait_for_function("document.querySelector('#viewbar button[aria-pressed=true]')?.textContent === '12M'", timeout=90000)
+    wait_ready(page)
+    assert page.inner_text(".statement .sub") != start_all and "12 mies." in page.inner_text("#bar-meta .view-btn")
+    shot(page, "98-period-bar", full=False)
+    page.goto(page.url.split("#")[0] + "#/perf/perf-summary")
+    wait_ready(page)
+    assert page.locator("#viewbar button[aria-pressed='true']").inner_text() == "12M"      # ten sam okres na innych ekranach
+    page.locator("#viewbar button", has_text="Bez CFD").tap()
+    page.wait_for_function("document.querySelector('#viewbar .opt')?.getAttribute('aria-pressed') === 'true'", timeout=90000)
+    page.locator("#viewbar .range").tap()
+    page.wait_for_selector(".sheet #view-from")
+    assert not page.errors, page.errors

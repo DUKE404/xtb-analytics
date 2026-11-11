@@ -14,6 +14,7 @@ const ICONS = {
   shield: "M12 4l7 2.5v5c0 4.2-2.9 7.3-7 8.5-4.1-1.2-7-4.3-7-8.5v-5L12 4z",
   dice: "M5 5h14v14H5zM9 9h.01M15 15h.01M15 9h.01M9 15h.01M12 12h.01",
   more: "M6 12h.01M12 12h.01M18 12h.01",
+  fund: "M4 19h16M6 19V10M10 19V6M14 19v-7M18 19V8M4 6l4 2 4-4 4 3 4-2",
   companies: "M4 20V9l6-4v15M10 20V11l10-4v13M3 20h18M13.5 13h3M13.5 16.5h3",
   trader: "M4 17l5-5 3.5 3.5L20 8M15 8h5v5",
   tax: "M7 4h10v16l-2.5-1.5L12 20l-2.5-1.5L7 20zM10 9h4M10 13h4",
@@ -21,6 +22,7 @@ const ICONS = {
   import: "M12 4v10M8 10l4 4 4-4M5 19h14",
   settings: "M5 8h9M18 8h1M5 16h1M10 16h9M16 6v4M8 14v4",
 };
+const PERIOD_SHORT = { "": "Całość", ytd: "YTD", "12m": "12M", "24m": "24M", "36m": "3L" };
 const CLIENT_SCREENS = new Set(["import", "mapping", "settings", "ai"]);
 const screenParams = new Map();   // parametry kontrolek zapamiętane per ekran
 let loadToken = 0;
@@ -67,6 +69,35 @@ function drawTabs(activeId, sectionId = activeId) {
   tabsEl.hidden = false;
 }
 
+/** Pasek okresu analizy: zawsze widoczny nad treścią, jedno dotknięcie przelicza wszystkie ekrany. */
+function drawViewbar() {
+  const bar = $("viewbar");
+  const s = api.state.session;
+  if (!s || !s.since_choices) { bar.hidden = true; return; }
+  const custom = !!s.until || (!!s.since && !(s.since in PERIOD_SHORT));
+  const apply = async (view, btn) => {
+    bar.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+    btn.classList.add("busy");
+    try { await api.setView(view); reloadAll(); } catch (err) { main.prepend(errorNote(err)); drawViewbar(); }
+  };
+  const chips = s.since_choices.map((o) => {
+    const b = el("button", { type: "button", "aria-pressed": !custom && s.since === o.value ? "true" : "false", title: o.label },
+      PERIOD_SHORT[o.value] ?? o.label);
+    b.addEventListener("click", () => apply({ since: o.value, until: "" }, b));
+    return b;
+  });
+  const range = el("button", { type: "button", class: "range", "aria-pressed": custom ? "true" : "false" }, custom ? periodLabel(s) : "Zakres dat…");
+  range.addEventListener("click", () => viewSheet(reloadAll, { custom: true }));
+  const extra = [];
+  if (s.has_cfd) {
+    const cfd = el("button", { type: "button", class: "opt", "aria-pressed": s.exclude_cfd ? "true" : "false" }, "Bez CFD");
+    cfd.addEventListener("click", () => apply({ exclude_cfd: !s.exclude_cfd }, cfd));
+    extra.push(cfd);
+  }
+  bar.replaceChildren(el("span", { class: "viewbar-label" }, "Okres"), ...chips, range, ...extra);
+  bar.hidden = false;
+}
+
 function drawSubnav(section, activeScreen) {
   const list = section?.screens || [];
   if (list.length < 2) { subnav.hidden = true; subnav.replaceChildren(); return; }
@@ -86,6 +117,7 @@ function drawBar(titleText) {
   const s = api.state.session;
   barMeta.replaceChildren();
   if (!s) return;
+  drawViewbar();
   const accounts = s.accounts || [];
   const chosen = accounts.filter((a) => a.selected).length;
   const what = [accounts.length > 1 ? `${chosen} z ${accounts.length} rachunków` : null, s.base,

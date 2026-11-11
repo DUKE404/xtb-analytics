@@ -273,3 +273,18 @@ wyceniony jak akcja lub po złym poziomie cen. Pliku nie widziałem, dlatego pop
 - **Kolory**: zysk zielony, strata czerwona (konwencja rynkowa) - zawsze razem ze znakiem +/−, więc kolor nie
   jest jedynym nośnikiem informacji. W tabelach czerwone są wszystkie wartości ujemne.
 - **Układ na komputer** od 1024 px: ta sama treść i te same bloki, inny układ (CSS), bez osobnego kodu ekranów.
+
+## Dział Fundusz, pasek okresu, benchmarki bez polskich indeksów
+
+- **Benchmarki**: zostały S&P 500, Nasdaq 100 i MSCI World. WIG i WIG20 usunięte z wyboru (zawodne źródła,
+  niepotrzebne przy portfelu akcji zagranicznych). WIG20 jest pobierany tylko jako czynnik do scenariuszy
+  i tylko wtedy, gdy w portfelu są polskie instrumenty.
+- **Pasek okresu** nad treścią: ten sam mechanizm co w „Widoku portfela”, tylko widoczny od razu.
+- **Przechwytywanie rynku**: średni miesięczny wynik portfela w miesiącach wzrostu (spadku) benchmarku
+  podzielony przez średni wynik benchmarku w tych miesiącach.
+- **Beta portfela** (ex ante): suma waga × beta instrumentu; bety z dziennych zwrotów z ostatnich 504 sesji
+  w walucie wyświetlania; instrument bez historii dostaje betę 1. Ekspozycja = wartość akcji/ETF i nominał CFD.
+- **Kalkulator zabezpieczenia**: nominał = (beta portfela − beta docelowa) × NAV. To arytmetyka, nie zalecenie.
+- **Limity**: progi domyślne (pozycja 15%, sektor 35%, top 5 60%, brutto 150%, VaR 95% 1d 3%, obsunięcie 20%,
+  gotówka min 2%) to typowe ograniczenia portfela akcyjnego przyjęte jako punkt startu; „blisko” = od 80% progu.
+- **Epizody obsunięć**: od szczytu do pierwszego dnia z nowym szczytem; długości w dniach kalendarzowych.

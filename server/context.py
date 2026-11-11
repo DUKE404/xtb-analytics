@@ -17,7 +17,7 @@ from data.xtb_parser import XTBExport, merge_exports, parse_accounts
 
 DEFAULT_RF = 0.04
 DEFAULT_BENCH = "MSCIW"
-BENCH_CHOICES = ["MSCIW", "SP500", "NDX", "WIG20"]
+BENCH_CHOICES = ["SP500", "NDX", "MSCIW"]
 
 
 def make_provider(is_demo: bool):
