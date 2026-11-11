@@ -96,7 +96,7 @@ def benchmarks(ctx, p) -> dict:
         ctl,
         B.chart(B.line(curves, "num", 0), "Portfel a indeksy, start okresu = 100",
                 f"Indeksy w innej walucie przeliczone na {_cur_name(ctx)} po kursach NBP, więc zawierają efekt walutowy. "
-                "WIG jest indeksem dochodowym (z dywidendami), WIG20 i S&P 500 cenowymi."),
+                "WIG20, S&P 500 i Nasdaq 100 to indeksy cenowe (bez dywidend); MSCI World jest liczony ceną ETF-u."),
         B.table(cmp, [("name", "Seria", "text"), ("Zwrot", "Zwrot", "pct", 1), ("CAGR", "CAGR", "pct", 1),
                       ("Zmienność", "Zmienność", "pct", 1), ("Sharpe", "Sharpe", "num", 2),
                       ("Max drawdown", "Max DD", "pct", 1)], title="Porównanie"),

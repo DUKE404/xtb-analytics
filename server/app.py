@@ -23,7 +23,7 @@ from werkzeug.exceptions import HTTPException
 from data.xtb_parser import XTBFormatError
 from server import blocks as B
 from server.blocks import jsonable
-from data.loader import BASE_CHOICES
+from data.loader import BASE_CHOICES, SINCE_PRESETS
 from server.context import BENCH_CHOICES, DEFAULT_BENCH, DEFAULT_RF, build_context
 from server.screens import SCREENS, Params, nav_config
 from server.sessions import SessionStore
@@ -89,12 +89,18 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
             "accounts": [{k: a[k] for k in ("id", "currency", "closed", "open", "cash", "as_of", "selected", "files")}
                          for a in ctx.accounts],
             "files_used": sorted({f for a in ctx.accounts for f in a.get("files", [])}),
+            "has_cfd": ctx.has_cfd, "exclude_cfd": ctx.exclude_cfd, "since": ctx.since, "since_date": ctx.since_date,
+            "first_date": (ctx.pf_full or pf).dates[0], "until": ctx.until, "last_date": (ctx.pf_full or pf).dates[-1],
+            "since_choices": [{"value": "", "label": "Od początku"}] + [
+                {"value": k, "label": v} for k, v in SINCE_PRESETS.items()],
         }
 
-    def make_ctx(files, overrides, base="PLN", accounts=None, parsed=None, exclude=None):
+    def make_ctx(files, overrides, base="PLN", accounts=None, parsed=None, exclude=None, exclude_cfd=False, since="",
+                 until=""):
         provider = provider_factory(files is None) if provider_factory else None
         try:
-            return build_context(files, overrides, provider, base=base, accounts=accounts, parsed=parsed, exclude=exclude)
+            return build_context(files, overrides, provider, base=base, accounts=accounts, parsed=parsed, exclude=exclude,
+                                 exclude_cfd=exclude_cfd, since=since, until=until)
         except XTBFormatError as exc:
             raise ApiError(str(exc), 422, "bad_format") from exc
         except ValueError as exc:
@@ -178,7 +184,9 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
             files = [(n, b) for n, b in files if b]
             if not files:
                 raise ApiError("Nie wybrano pliku. Wgraj eksport z xStation 5 (.xlsx lub .csv).", 400, "no_file")
-        ctx = make_ctx(files, overrides, _base(request.form.get("base")), exclude=_accounts(request.form.get("exclude")))
+        ctx = make_ctx(files, overrides, _base(request.form.get("base")), exclude=_accounts(request.form.get("exclude")),
+                       exclude_cfd=request.form.get("exclude_cfd") in ("1", "true"), since=_since(request.form.get("since")),
+                       until=_date(request.form.get("until")))
         sid = sessions.put(ctx)
         return ok(session_meta(sid, ctx), 201)
 
@@ -199,7 +207,8 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
         rows = body.get("mapping") or []
         overrides = pd.DataFrame(rows) if rows else None
         ctx = make_ctx(None if old.is_demo else old.files, overrides, old.base,
-                       [a["id"] for a in old.accounts if a["selected"]], old.parsed)
+                       [a["id"] for a in old.accounts if a["selected"]], old.parsed,
+                       exclude_cfd=old.exclude_cfd, since=old.since, until=old.until)
         sessions.put(ctx, sid)
         return ok(session_meta(sid, ctx))
 
@@ -216,7 +225,10 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
                 raise ApiError("Zaznacz przynajmniej jeden rachunek.", 400, "no_account")
         else:
             accounts = [a["id"] for a in old.accounts if a["selected"]]
-        ctx = make_ctx(None if old.is_demo else old.files, old.overrides, base, accounts, old.parsed)
+        exclude_cfd = bool(body["exclude_cfd"]) if "exclude_cfd" in body else old.exclude_cfd
+        since = _since(body["since"]) if "since" in body else old.since
+        ctx = make_ctx(None if old.is_demo else old.files, old.overrides, base, accounts, old.parsed,
+                       exclude_cfd=exclude_cfd, since=since, until=_date(body["until"]) if "until" in body else old.until)
         sessions.put(ctx, sid)
         return ok(session_meta(sid, ctx))
 
@@ -328,6 +340,24 @@ def _bench_label(key: str) -> str:
 def _base(raw) -> str:
     code = str(raw or "PLN").upper()
     return code if code in BASE_CHOICES else "PLN"
+
+
+def _date(raw) -> str:
+    try:
+        return pd.Timestamp(str(raw).strip()).strftime("%Y-%m-%d") if raw and str(raw).strip() else ""
+    except (ValueError, TypeError):
+        return ""
+
+
+def _since(raw) -> str:
+    """Kod okna analizy: pusty, jeden z gotowych okresów albo data RRRR-MM-DD."""
+    code = str(raw or "").strip().lower()
+    if code in SINCE_PRESETS:
+        return code
+    try:
+        return pd.Timestamp(code).strftime("%Y-%m-%d") if code else ""
+    except (ValueError, TypeError):
+        return ""
 
 
 def _accounts(raw: str | None) -> list[str] | None:

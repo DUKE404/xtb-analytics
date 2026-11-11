@@ -9,14 +9,15 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from core.portfolio import Portfolio
-from data.loader import BASE_CHOICES, BENCHMARK_KEYS, MarketBundle, build_portfolio, convert_export, load_market
+from data.loader import (BASE_CHOICES, BENCHMARK_KEYS, MarketBundle, build_portfolio, cfd_symbols, convert_export,
+                         export_between, load_market, resolve_since, resolve_until, without_cfd)
 from data.mapping import build_mapping
 from data.sample_generator import ensure_sample
 from data.xtb_parser import XTBExport, merge_exports, parse_accounts
 
 DEFAULT_RF = 0.04
 DEFAULT_BENCH = "MSCIW"
-BENCH_CHOICES = ["MSCIW", "SP500", "WIG", "WIG20"]
+BENCH_CHOICES = ["MSCIW", "SP500", "NDX", "WIG20"]
 
 
 def make_provider(is_demo: bool):
@@ -40,7 +41,19 @@ class Ctx:
     export_pln: XTBExport | None = None       # to samo w złotych - do podatków
     parsed: list = field(default_factory=list, repr=False)   # wszystkie wgrane rachunki, także odznaczone
     overrides: pd.DataFrame | None = None
+    pf_full: Portfolio | None = None          # cała historia (pf może być przycięty do okna analizy)
+    exclude_cfd: bool = False
+    has_cfd: bool = False
+    since: str = ""                           # kod okna analizy ("", "ytd", "12m", ... albo data)
+    since_date: pd.Timestamp | None = None
+    until: str = ""                           # koniec okna analizy (data) albo "" = do daty raportu
+    until_date: pd.Timestamp | None = None
     _cache: dict = field(default_factory=dict, repr=False)
+
+    @property
+    def meta_full(self) -> pd.DataFrame:
+        """Mapowanie wszystkich instrumentów z eksportu (także wyłączonych CFD) - potrzebne podatkom."""
+        return self.mapping.set_index("symbol")
 
     @property
     def base(self) -> str:
@@ -87,7 +100,7 @@ class Ctx:
         return br.iloc[:, 0] if br.shape[1] else pd.Series(dtype=float)
 
     def asset_returns(self) -> pd.DataFrame:
-        return self.memo("asset_returns", lambda: self.market.asset_returns(self.pf.meta))
+        return self.memo("asset_returns", lambda: self.market.asset_returns(self.pf.meta).loc[:self.pf.as_of])
 
     def risk_inputs(self, lookback: int = 504):
         """(zwroty instrumentów w walucie bazowej, bieżące ekspozycje, uwagi) - wejście do miar ryzyka."""
@@ -99,13 +112,17 @@ class Ctx:
 
 def build_context(files: list[tuple[str, bytes]] | None, overrides: pd.DataFrame | None = None,
                   provider=None, base: str = "PLN", accounts: list[str] | None = None, parsed: list | None = None,
-                  exclude: list[str] | None = None) -> Ctx:
+                  exclude: list[str] | None = None, exclude_cfd: bool = False, since: str = "",
+                  until: str = "") -> Ctx:
     """files=None -> dane przykładowe (tryb demo, notowania syntetyczne, bez sieci).
 
-    base     - waluta wyświetlania (PLN / USD / EUR),
-    accounts - numery rachunków do wliczenia (None albo nic pasującego = wszystkie wgrane),
-    exclude  - numery rachunków do pominięcia (gdy nie podano `accounts`); nowo wgrany rachunek jest wliczany,
-    parsed   - już sparsowane rachunki (zmiana waluty lub zaznaczenia nie wymaga ponownego czytania plików).
+    base        - waluta wyświetlania (PLN / USD / EUR),
+    accounts    - numery rachunków do wliczenia (None albo nic pasującego = wszystkie wgrane),
+    exclude     - numery rachunków do pominięcia (gdy nie podano `accounts`); nowo wgrany rachunek jest wliczany,
+    parsed      - już sparsowane rachunki (zmiana widoku nie wymaga ponownego czytania plików),
+    exclude_cfd - portfel bez CFD: ich wynik jest traktowany jak wpłata / wypłata,
+    since       - od kiedy analizować ("", "ytd", "12m", "24m", "36m" albo data RRRR-MM-DD),
+    until       - do kiedy analizować (data RRRR-MM-DD; "" = do daty raportu).
     """
     is_demo = files is None
     if is_demo:
@@ -122,8 +139,19 @@ def build_context(files: list[tuple[str, bytes]] | None, overrides: pd.DataFrame
     mapping = build_mapping(raw.symbols, overrides, hints=raw.instruments)
     provider = provider or make_provider(is_demo)
     market = load_market(raw, mapping, provider, base=base)
-    pf = build_portfolio(raw, mapping, market)
-    export = convert_export(raw, market.fx, market.base)
-    export_pln = export if market.base == "PLN" else convert_export(raw, market.fx_pln, "PLN")
+    has_cfd = bool(cfd_symbols(mapping) & set(raw.symbols))
+    exclude_cfd = bool(exclude_cfd and has_cfd)
+    work = without_cfd(raw, mapping) if exclude_cfd else raw
+    pf_full = build_portfolio(work, mapping, market)
+    end = resolve_until(until, pf_full.as_of, pf_full.dates[0])
+    start = resolve_since(since, end if end is not None else pf_full.as_of, pf_full.dates[0])
+    pf = pf_full.window(start, end) if (start is not None or end is not None) else pf_full
+    export = convert_export(work, market.fx, market.base)
+    if start is not None or end is not None:
+        export = export_between(export, start, end)
+    export_pln = convert_export(raw, market.fx_pln, "PLN")          # podatki: zawsze wszystko, zawsze w złotych
     return Ctx(export=export, mapping=mapping, market=market, pf=pf, provider=provider, is_demo=is_demo,
-               files=files, export_raw=raw, export_pln=export_pln, parsed=parsed, overrides=overrides)
+               files=files, export_raw=raw, export_pln=export_pln, parsed=parsed, overrides=overrides,
+               pf_full=pf_full, exclude_cfd=exclude_cfd, has_cfd=has_cfd,
+               since=str(since or "") if start is not None else "", since_date=start,
+               until=end.strftime("%Y-%m-%d") if end is not None else "", until_date=end)

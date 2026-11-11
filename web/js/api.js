@@ -100,6 +100,10 @@ export async function createSession() {
   const ov = overridesFor(mode);
   if (ov.length) form.append("overrides", JSON.stringify(ov));
   form.append("base", prefs.get("base", "PLN"));
+  const view = prefs.get("view", {});
+  if (view.exclude_cfd) form.append("exclude_cfd", "1");
+  if (view.since) form.append("since", view.since);
+  if (view.until) form.append("until", view.until);
   const off = mode === "upload" ? prefs.get("accounts:off", []) : [];
   if (off.length) form.append("exclude", JSON.stringify(off));
   adopt(await request("/api/session", { method: "POST", body: form, timeout: 180000 }));
@@ -110,10 +114,11 @@ export async function createSession() {
 }
 
 /** Zmiana waluty wyświetlania i/lub zaznaczonych rachunków. accounts = numery rachunków do wliczenia. */
-export async function setView({ base, accounts }) {
-  const out = await withSession((sid) => request(`/api/session/${sid}/view`, { method: "PUT", json: { base, accounts }, timeout: 180000 }));
+export async function setView(view) {
+  const out = await withSession((sid) => request(`/api/session/${sid}/view`, { method: "PUT", json: view, timeout: 180000 }));
   adopt(out);
   prefs.set("base", out.base);
+  prefs.set("view", { exclude_cfd: out.exclude_cfd, since: out.since, until: out.until });
   if (state.mode === "upload") prefs.set("accounts:off", out.accounts.filter((a) => !a.selected).map((a) => a.id));
   return out;
 }
@@ -163,7 +168,7 @@ export async function saveMapping(rows) {
 
 export async function forgetDevice() {
   await files.clear();
-  ["mode", "overrides:demo", "overrides:upload", "settings", "base", "accounts:off"].forEach((k) => prefs.remove(k));
+  ["mode", "overrides:demo", "overrides:upload", "settings", "base", "accounts:off", "view"].forEach((k) => prefs.remove(k));
   state.mode = "demo";
   state.settings = null;
   return createSession();

@@ -103,7 +103,7 @@ def test_health_and_nav(client):
     from server.screens import CLIENT_SCREENS
     more = [s["id"] for m in h["nav"]["more"] for s in m["screens"]]
     assert set(more) <= set(SCREENS) | CLIENT_SCREENS
-    assert {c["value"] for c in h["settings"]["bench_choices"]} == {"MSCIW", "SP500", "WIG", "WIG20"}
+    assert {c["value"] for c in h["settings"]["bench_choices"]} == {"MSCIW", "SP500", "NDX", "WIG20"}
 
 
 def test_session_meta(client, sid):
@@ -125,7 +125,7 @@ def test_every_screen_renders(client, sid, name):
 
 
 @pytest.mark.parametrize("name,params", [
-    ("perf-summary", {"period": "ytd"}), ("perf-summary", {"period": "12m", "bench": "WIG", "rf": "0.06"}),
+    ("perf-summary", {"period": "ytd"}), ("perf-summary", {"period": "12m", "bench": "NDX", "rf": "0.06"}),
     ("perf-benchmarks", {"period": "12m"}), ("perf-attribution", {"period": "ytd"}),
     ("risk-factors", {"freq": "D"}), ("perf-summary", {"period": "bzdura", "rf": "abc", "bench": "XXX"}),
     ("sim-stress", {"s_SP500": "-30", "s_USDPLN": "12,5", "beta": "false", "detail": "COVID, marzec 2020"}),

@@ -91,6 +91,35 @@ Hasło lokalnie jest opcjonalne. Żeby je ustawić albo włączyć AI, skopiuj `
 6. W aplikacji wejdź w **Więcej → Dane i import** i wgraj pliki - wszystkie naraz albo po kolei. Aplikacja sama
    rozpozna rachunki (po numerze) i tabele (po nazwach kolumn, po polsku i po angielsku).
 
+### Widok portfela: CFD i okres analizy
+
+Przycisk na pasku u góry otwiera **Widok portfela** - ustawienia wspólne dla wszystkich ekranów:
+
+- **Pomiń CFD** - zostają same akcje i ETF-y. Wynik CFD (zyski, straty, swapy) jest wtedy traktowany jak
+  wpłata albo wypłata: gotówka dalej zgadza się z rachunkiem, ale CFD nie wpływają na stopy zwrotu,
+  obsunięcia ani ryzyko. Przydatne, gdy CFD były epizodem, a oceniasz portfel akcyjny.
+- **Okres analizy** - od początku, od początku roku, ostatnie 12/24/36 miesięcy albo **własny zakres dat**
+  (od-do). Stan portfela z dnia przed początkiem okresu jest kapitałem startowym, więc wcześniejsza historia
+  nie obciąża statystyk. Gdy ustawisz datę końcową, skład i ryzyko są liczone na ten dzień.
+- Podatki zawsze liczą całą historię i wszystkie instrumenty.
+
+### Spółki: odwrócony DCF, prognozy, ceny docelowe
+
+Zakładka **Spółki** pokazuje dla wybranej akcji z portfela:
+
+- **odwrócony DCF** - jaki roczny wzrost wolnych przepływów pieniężnych jest wpisany w dzisiejszą wycenę,
+  z suwakami stopy dyskonta i wzrostu wiecznego oraz tabelą wrażliwości,
+- zestawienie tego wzrostu z historią spółki i z prognozami analityków,
+- przychody (historia i konsensus prognoz), przepływy operacyjne, wolne przepływy i zysk netto,
+- ceny docelowe analityków: najniższą, średnią, najwyższą i ich odległość od ceny.
+
+Dane pochodzą z Yahoo Finance (w trybie demo są zmyślone). To informacja, nie rekomendacja.
+
+### Komputer
+
+Na szerokim ekranie (od 1024 px) aplikacja przełącza się w układ stanowiskowy: boczny panel z całą nawigacją,
+liczby w kafelkach, tabele na całą szerokość. Zysk jest zielony, strata czerwona.
+
 ### Kilka rachunków i waluta wyświetlania
 
 - Każdy wgrany plik **dodaje się** do już wgranych. Nowszy eksport tego samego rachunku zastępuje starszy.
@@ -228,6 +257,11 @@ tests/    pytest: silnik, API, interfejs w przeglądarce (Playwright)
 - Przy rachunkach z różnymi datami raportu portfel jest liczony na datę najnowszego.
 - Mnożniki i stawki depozytu CFD pochodzą z tabeli wbudowanej w aplikację - sprawdź je dla swoich instrumentów
   w zakładce Tickery.
+- **Spółki**: dane z Yahoo Finance nie były testowane na żywo (środowisko budowy nie ma sieci) - testy używają
+  danych podstawionych. Dla małych spółek i części rynków Yahoo nie podaje prognoz ani cen docelowych.
+  Odwrócony DCF to model jednofazowy plus wzrost wieczny; dla banków, ubezpieczycieli i spółek z ujemnym FCF
+  nie ma sensu. Sprawozdania w innej walucie niż notowania są przeliczane po bieżącym kursie NBP.
+- **Data końcowa okresu**: otwarte pozycje na ten dzień są odtwarzane z historii, ale bez ceny i wyniku z raportu.
 - **Skala notowań**: gdy poziom notowań nie pasuje do cen transakcji z raportu (split, pensy zamiast funtów,
   inny kontrakt, zły ticker), pozycja jest wyceniana notowaniami przeskalowanymi do cen otwarcia i zamknięcia
   z raportu, a aplikacja to zgłasza w „Uwagach do danych”. Wynik całkowity jest wtedy poprawny, przebieg dzienny
@@ -238,7 +272,7 @@ tests/    pytest: silnik, API, interfejs w przeglądarce (Playwright)
 - Dni, w których wartość portfela wychodzi ujemna (błąd danych), są pomijane w stopach zwrotu i zgłaszane
   z nazwą pozycji, która to powoduje.
 - Dni wolne na jednej giełdzie przy otwartej drugiej są wypełniane ostatnim zamknięciem.
-- WIG zawiera dywidendy, WIG20 i S&P 500 nie - porównanie z nimi jest dla portfela lekko korzystne.
+- Benchmarki (WIG20, S&P 500, Nasdaq 100) są indeksami cenowymi, bez dywidend - porównanie z nimi jest dla portfela lekko korzystne. WIG usunięto, bo darmowe źródła go nie podają.
 
 **Modele**
 

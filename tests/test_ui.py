@@ -82,7 +82,7 @@ def test_overview_loads_with_statement_and_six_numbers(page):
     assert page.locator(".ledger").first.locator("li").count() == 6
     assert page.locator(".chart svg").count() >= 2
     assert "dane przykładowe" in page.inner_text("#bar-meta")
-    assert page.locator("#tabs button").count() <= 5
+    assert page.locator("#tabs button:visible").count() <= 5
     shot(page, "01-overview")
     assert not page.errors, page.errors
 
@@ -356,3 +356,71 @@ def test_app_shell_opens_offline_from_service_worker(browser, base_url):
     wait_ready(pg)                                                              # po powrocie sieci aplikacja rusza sama
     assert "19 dni na 20" in pg.inner_text(".statement")
     ctx.close()
+
+
+# --------------------------------------------------------------------------- szeroki ekran i nowe funkcje widoku
+
+@pytest.fixture()
+def desktop(browser, base_url):
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900}, locale="pl-PL", service_workers="block")
+    pg = ctx.new_page()
+    pg.errors = []
+    pg.on("pageerror", lambda e: pg.errors.append(f"pageerror: {e}"))
+    pg.on("console", lambda m: pg.errors.append(f"console: {m.text}") if m.type == "error" else None)
+    pg.goto(base_url + "/")
+    wait_ready(pg)
+    yield pg
+    ctx.close()
+
+
+def test_desktop_layout_has_sidebar_and_tiles(desktop):
+    page = desktop
+    tabs = page.locator("#tabs").bounding_box()
+    assert tabs["x"] == 0 and tabs["width"] < 260 and tabs["height"] > 800            # boczny panel, nie pasek na dole
+    labels = page.locator("#tabs button:visible span").all_inner_texts()
+    assert "Spółki" in labels and "Podatki" in labels and "Więcej" not in labels      # działy z "Więcej" widać od razu
+    tiles = page.locator(".ledger > li")
+    a, b = tiles.nth(0).bounding_box(), tiles.nth(1).bounding_box()
+    assert abs(a["y"] - b["y"]) < 2 and b["x"] > a["x"] + 150                         # kafelki obok siebie
+    assert page.locator("figure.chart").nth(0).bounding_box()["width"] > 900          # samotny wykres na całą szerokość
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    shot(page, "d1-overview", full=False)
+    page.locator("#tabs button", has_text="Spółki").click()
+    wait_ready(page)
+    assert page.inner_text("#bar-title") == "Spółki" and "rocznie przez 10 lat" in page.inner_text(".statement")
+    assert page.locator("figure.chart").count() >= 3 and "nie rekomendacja" in page.inner_text("main")
+    shot(page, "d2-companies")
+    assert not page.errors, page.errors
+
+
+def test_view_sheet_period_and_cfd_carve_out(desktop):
+    page = desktop
+    twr_before = page.inner_text(".ledger")
+    page.locator("#bar-meta .view-btn").click()
+    page.wait_for_selector(".sheet")
+    assert page.locator(".sheet .toggle input").count() == 1                          # demo ma CFD -> przełącznik "Pomiń CFD"
+    page.locator(".sheet .toggle input").check()
+    page.select_option(".sheet select", "12m")
+    shot(page, "d3-view-sheet", full=False)
+    page.locator(".sheet .btn", has_text="Zastosuj").click()
+    page.wait_for_selector(".sheet", state="detached", timeout=90000)
+    wait_ready(page)
+    label = page.inner_text("#bar-meta .view-btn")
+    assert "bez CFD" in label and "12 mies." in label
+    assert page.inner_text(".ledger") != twr_before
+    page.locator("#tabs button", has_text="Ryzyko").click()
+    wait_ready(page)
+    # własny zakres dat
+    page.locator("#bar-meta .view-btn").click()
+    page.wait_for_selector(".sheet")
+    page.select_option(".sheet select", "custom")
+    page.fill("#view-from", "2025-06-02")
+    page.fill("#view-to", "2026-03-31")
+    page.locator(".sheet .btn", has_text="Zastosuj").click()
+    page.wait_for_selector(".sheet", state="detached", timeout=90000)
+    wait_ready(page)
+    assert "31.03.2026" in page.inner_text("#bar-meta .view-btn")
+    page.reload()
+    wait_ready(page)
+    assert "31.03.2026" in page.inner_text("#bar-meta .view-btn") and "bez CFD" in page.inner_text("#bar-meta .view-btn")
+    assert not page.errors, page.errors

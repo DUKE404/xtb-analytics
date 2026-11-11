@@ -31,7 +31,7 @@
   /* dane: paleta kategorialna na ciemne tło (sprawdzona pod kątem daltonizmu), kolejność stała */
   --s0: #3987e5; --s1: #d95926; --s2: #199e70; --s3: #c98500;
   --s4: #d55181; --s5: #008300; --s6: #9085e9; --s7: #e66767;
-  --pos: #3987e5; --neg: #e66767; --neutral: #6f7f8e; --mid: #2b3742;
+  --pos: #2fb37f; --neg: #ef6a6a; --neutral: #6f7f8e; --mid: #2b3742;   /* zysk zielony, strata czerwona; znak +/− niesie to samo */
 
   --serif: "Ledger Serif", ui-serif, "Iowan Old Style", Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -228,6 +228,7 @@ table.data th:last-child, table.data td:last-child { padding-right: var(--gutter
 .tabs button svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .tabs button[aria-current="page"] { color: var(--brass); }
 .tabs button[aria-current="page"] span { color: var(--ink); font-weight: 600; }
+.tabs .extra { display: none; }
 
 /* ---------- menu "Więcej", listy ---------- */
 .menu { margin: 8px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
@@ -304,3 +305,74 @@ pre.json { margin: 0; padding: 12px; background: var(--panel); border-radius: 8p
 .msg.assistant .memo p:last-child { margin-bottom: 0; }
 .chat-form { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
 .chat-form .btn { width: auto; }
+
+/* ---------- kolor liczb: strata czerwona wszędzie, zysk zielony tam, gdzie liczba jest wynikiem ---------- */
+.value.pos { color: var(--pos); }
+.value.neg, td.neg { color: var(--neg); }
+.date-range { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.date-range label { display: grid; gap: 6px; font-size: 13px; color: var(--ink-3); }
+.date-range input { color-scheme: dark; }
+.view-btn { max-width: 62vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- szeroki ekran: stanowisko analityka ----------
+   Boczny panel z całą nawigacją, liczby w kafelkach, wykresy parami. Treść ta sama co w telefonie. */
+@media (min-width: 1024px) {
+  :root { --gutter: 36px; --side: 236px; --bar-h: 64px; }
+  body { font-size: 15.5px; }
+  #app { max-width: none; margin: 0; padding-left: var(--side); }
+  .bar, .subnav, main { max-width: 1360px; margin-left: auto; margin-right: auto; }
+  .bar-title { font-size: 26px; }
+  .view-btn { max-width: none; font-size: 13.5px; padding: 6px 10px 6px 12px; }
+  main { padding-bottom: 64px; }
+
+  .tabs {
+    top: 0; right: auto; bottom: 0; width: var(--side); max-width: none; height: auto; margin: 0;
+    flex-direction: column; justify-content: flex-start; gap: 2px; padding: 84px 12px 20px;
+    background: var(--panel); border-top: 0; border-right: 1px solid var(--line); backdrop-filter: none; overflow-y: auto;
+  }
+  .tabs::before {
+    content: "XTB Analytics"; position: absolute; top: 24px; left: 24px;
+    font: 600 20px/1.1 var(--serif); color: var(--ink); letter-spacing: -0.005em;
+  }
+  .tabs button {
+    flex: none; flex-direction: row; justify-content: flex-start; gap: 12px; width: 100%; padding: 10px 12px;
+    border-radius: 9px; font-size: 14.5px; color: var(--ink-2);
+  }
+  .tabs button:hover { background: var(--raised); color: var(--ink); }
+  .tabs button svg { width: 20px; height: 20px; flex: none; }
+  .tabs button[aria-current="page"] { background: var(--raised); color: var(--brass); box-shadow: inset 2px 0 0 var(--brass); }
+  .tabs .more { display: none; }
+  .tabs .extra { display: flex; }
+  .tabs .extra:first-of-type { margin-top: 14px; }
+  .tabs .more + .extra { margin-top: 18px; position: relative; }
+  .tabs .more + .extra::before { content: ""; position: absolute; left: 12px; right: 12px; top: -10px; border-top: 1px solid var(--line); }
+
+  .statement p { font-size: 30px; max-width: 30em; }
+  main .screen { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 30px 32px; align-items: start; }
+  main .screen > * { grid-column: 1 / -1; margin-top: 0 !important; min-width: 0; }
+  main .screen > figure.chart { grid-column: span 6; padding: 18px 20px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  /* wykres bez sąsiada zajmuje całą szerokość */
+  main .screen > :not(figure.chart) + figure.chart:has(+ :not(figure.chart)),
+  main .screen > :not(figure.chart) + figure.chart:last-child,
+  main .screen > figure.chart:first-child:has(+ :not(figure.chart)) { grid-column: 1 / -1; }
+  .chart-body { margin: 8px 0 0; }
+  main .screen > .controls, main .screen > .control { max-width: 760px; }
+  main .screen > .controls:not(.grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; align-items: end; }
+  main .screen > p.note, main .screen > .caption { max-width: 960px; }
+
+  /* liczby: kafelki zamiast wierszy */
+  main .screen .ledger { display: grid; grid-template-columns: repeat(auto-fit, minmax(172px, 1fr)); gap: 12px; border-top: 0; margin-top: 10px; }
+  main .screen .ledger > li { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px 16px; }
+  main .screen .ledger .row { grid-template-columns: 1fr; row-gap: 6px; padding: 12px 0 13px; }
+  main .screen .ledger .row .label { font-size: 13px; color: var(--ink-3); }
+  main .screen .ledger .row .value { font-size: 24px; text-align: left; letter-spacing: -0.01em; }
+  main .screen .ledger .row .value-note { justify-self: start; text-align: left; }
+  main .screen .ledger li:hover { border-color: var(--line-strong); }
+
+  .table-wrap { margin: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  table.data th:first-child, table.data td:first-child { padding-left: 18px; }
+  table.data th:last-child, table.data td:last-child { padding-right: 18px; }
+  table.data tbody tr:hover td { background: var(--raised); }
+  .sheet { left: 50%; right: auto; bottom: auto; top: 10vh; width: 520px; max-height: 80vh; transform: translateX(-50%); border-radius: 16px; }
+  .menu, .login, .steps { max-width: 760px; }
+}

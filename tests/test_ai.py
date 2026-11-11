@@ -128,9 +128,9 @@ def test_endpoints_with_key(calls):
     sid = c.post("/api/session", data={"demo": "1"}).get_json()["sid"]
     payload = c.get(f"/api/session/{sid}/ai/payload").get_json()["payload"]
     assert payload["wyniki"]["benchmark"].startswith("MSCI")
-    memo = c.post(f"/api/session/{sid}/ai/memo", json={"bench": "WIG"})
+    memo = c.post(f"/api/session/{sid}/ai/memo", json={"bench": "NDX"})
     assert memo.status_code == 200 and memo.get_json()["text"].startswith("## Stan")
-    assert '"benchmark": "WIG"' in calls[-1]["body"]["messages"][0]["content"]
+    assert '"benchmark": "Nasdaq 100 (w PLN)"' in calls[-1]["body"]["messages"][0]["content"]
     chat = c.post(f"/api/session/{sid}/ai/chat", json={"messages": [{"role": "user", "content": "Jakie mam ryzyko?"}]})
     assert chat.status_code == 200 and chat.get_json()["model"] == ai.DEFAULT_MODEL
     assert c.post(f"/api/session/{sid}/ai/chat", json={"messages": []}).status_code == 400

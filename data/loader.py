@@ -14,8 +14,8 @@ from core.portfolio import Portfolio, reconstruct
 from data.xtb_parser import XTBExport
 
 HISTORY_PAD_DAYS = 400          # ile historii przed pierwszą transakcją pobieramy (ryzyko, bety)
-BENCHMARK_KEYS = ["WIG20", "WIG", "SP500", "MSCIW"]
-FACTOR_PROXY_KEYS = ["NDX", "DAX", "GOLD", "OIL"]
+BENCHMARK_KEYS = ["WIG20", "SP500", "NDX", "MSCIW"]     # WIG usunięty: żadne darmowe źródło go nie podaje
+FACTOR_PROXY_KEYS = ["DAX", "GOLD", "OIL"]
 BASE_CHOICES = ["PLN", "USD", "EUR"]
 MONEY_COLS = ("purchase_value", "sale_value", "margin", "commission", "swap", "rollover", "gross_pl")
 
@@ -196,6 +196,103 @@ def convert_export(export: XTBExport, fx: pd.DataFrame, target: str) -> XTBExpor
         if "currency" in df.columns:
             df["currency"] = target
     return out
+
+
+CFD_CASH_KINDS = ("CLOSE_TRADE", "SWAP", "ROLLOVER")     # operacje, które istnieją tylko przy pozycjach z depozytem
+CARVED_KIND = "TRANSFER"                                  # wynik wyłączonych CFD traktujemy jak wpłatę / wypłatę
+
+
+def _copy_export(export: XTBExport, **frames) -> XTBExport:
+    return XTBExport(closed=frames.get("closed", export.closed), open=frames.get("open", export.open),
+                     cash=frames.get("cash", export.cash), as_of=export.as_of, currency=export.currency,
+                     notes=list(export.notes), instruments=export.instruments,
+                     original_currency=export.original_currency, account=export.account, accounts=export.accounts)
+
+
+def cfd_symbols(mapping: pd.DataFrame) -> set:
+    return set(mapping.loc[mapping["asset_class"] == "CFD", "symbol"])
+
+
+def without_cfd(export: XTBExport, mapping: pd.DataFrame) -> XTBExport:
+    """Portfel akcji i ETF-ów bez CFD.
+
+    Pozycje CFD znikają, a ich rozliczenia gotówkowe (wynik, swapy, prowizje) stają się przepływem zewnętrznym:
+    gotówka na rachunku dalej zgadza się z raportem, ale wynik CFD nie wpływa na stopy zwrotu ani ryzyko.
+    """
+    cfd = cfd_symbols(mapping)
+    cash = export.cash.copy()
+    if len(cash):
+        hit = cash["symbol"].isin(cfd) | cash["kind"].isin(CFD_CASH_KINDS)
+        cash.loc[hit, "kind"] = CARVED_KIND
+        cash.loc[hit, "symbol"] = ""
+    return _copy_export(export, closed=export.closed[~export.closed["symbol"].isin(cfd)].reset_index(drop=True),
+                        open=export.open[~export.open["symbol"].isin(cfd)].reset_index(drop=True), cash=cash)
+
+
+def export_between(export: XTBExport, start=None, end=None) -> XTBExport:
+    """Historia transakcji i operacji w wybranym okresie.
+
+    Gdy podano `end`, otwarte pozycje to te, które były otwarte tego dnia - także zamknięte później
+    (bez ceny bieżącej i wyniku, bo raport ich na ten dzień nie podaje).
+    """
+    closed, open_, cash = export.closed, export.open, export.cash
+    out = _copy_export(export)
+    if end is not None:
+        stop = pd.Timestamp(end).normalize() + pd.Timedelta(days=1)
+        later = closed[(closed["open_time"] < stop) & (closed["close_time"] >= stop)].copy()
+        for col in ("close_time",):
+            later[col] = pd.NaT
+        for col in ("close_price", "sale_value", "gross_pl", "swap", "rollover"):
+            if col in later.columns:
+                later[col] = 0.0
+        open_ = open_[open_["open_time"] < stop].copy()
+        for col in ("market_price", "gross_pl"):
+            if col in open_.columns:
+                open_[col] = np.nan if col == "market_price" else 0.0
+        cols = [c for c in open_.columns if c in later.columns]
+        open_ = pd.concat([open_, later[cols]], ignore_index=True) if len(later) else open_.reset_index(drop=True)
+        closed, cash = closed[closed["close_time"] < stop], cash[cash["time"] < stop]
+        out.as_of = pd.Timestamp(end).normalize()
+    if start is not None:
+        begin = pd.Timestamp(start).normalize()
+        closed, cash = closed[closed["close_time"] >= begin], cash[cash["time"] >= begin]
+    out.closed, out.open, out.cash = closed.reset_index(drop=True), open_.reset_index(drop=True), cash.reset_index(drop=True)
+    return out
+
+
+SINCE_PRESETS = {"ytd": "Od początku roku", "12m": "Ostatnie 12 miesięcy", "24m": "Ostatnie 24 miesiące",
+                 "36m": "Ostatnie 3 lata"}
+
+
+def resolve_since(code, as_of, first) -> pd.Timestamp | None:
+    """Kod okna analizy ("", "ytd", "12m", "24m", "36m" albo data RRRR-MM-DD) -> pierwszy dzień analizy."""
+    code = str(code or "").strip().lower()
+    as_of, first = pd.Timestamp(as_of).normalize(), pd.Timestamp(first).normalize()
+    if not code:
+        return None
+    if code == "ytd":
+        start = pd.Timestamp(year=as_of.year, month=1, day=1)
+    elif code.endswith("m") and code[:-1].isdigit():
+        start = as_of - pd.DateOffset(months=int(code[:-1]))
+    else:
+        try:
+            start = pd.Timestamp(code).normalize()
+        except (ValueError, TypeError):
+            return None
+    latest = as_of - pd.Timedelta(days=14)          # zostaw przynajmniej dwa tygodnie historii
+    start = min(start, latest)
+    return None if start <= first else start
+
+
+def resolve_until(code, as_of, first) -> pd.Timestamp | None:
+    """Koniec okna analizy (data RRRR-MM-DD) albo None, gdy analiza sięga do daty raportu."""
+    try:
+        end = pd.Timestamp(str(code or "").strip()).normalize() if str(code or "").strip() else None
+    except (ValueError, TypeError):
+        return None
+    if end is None or end >= pd.Timestamp(as_of).normalize():
+        return None
+    return max(end, pd.Timestamp(first).normalize() + pd.Timedelta(days=14))
 
 
 def to_pln(export: XTBExport, fx_pln: pd.DataFrame) -> XTBExport:

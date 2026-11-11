@@ -192,5 +192,43 @@ class SyntheticMarketData:
         s, cur = self.market.benchmark(key)
         return s.loc[pd.Timestamp(start):pd.Timestamp(end)], cur
 
+    def fundamentals(self, row) -> dict:
+        """Zmyślone, ale spójne dane o spółce - żeby moduł działał w trybie demo bez sieci."""
+        import zlib
+        seed = zlib.crc32(str(row["symbol"]).encode())
+        rng = np.random.default_rng(seed)
+        px = self.price_history(row, self.market.dates[-30], self.market.dates[-1])
+        price = float(px["close"].iloc[-1])
+        shares = float(rng.integers(50, 4000)) * 1e6
+        cap = price * shares
+        growth = float(rng.uniform(0.03, 0.22))
+        fcf_now = cap * float(rng.uniform(0.02, 0.06))
+        rev_now = fcf_now / float(rng.uniform(0.10, 0.28))
+        year = int(self.market.dates[-1].year) - 1
+        hist = lambda now, g: [{"year": year - k, "value": now / (1 + g) ** k} for k in range(3, -1, -1)]
+        debt, cash = cap * float(rng.uniform(0.0, 0.25)), cap * float(rng.uniform(0.02, 0.15))
+        mean = price * float(rng.uniform(0.9, 1.3))
+        est = lambda base, g: [{"period": "0y", "avg": base * (1 + g), "low": base * (1 + g * 0.6), "high": base * (1 + g * 1.4),
+                                "growth": g, "analysts": 18.0, "year_ago": base},
+                               {"period": "+1y", "avg": base * (1 + g) ** 2, "low": base * (1 + g * 0.6) ** 2,
+                                "high": base * (1 + g * 1.4) ** 2, "growth": g, "analysts": 16.0, "year_ago": base * (1 + g)}]
+        return {
+            "ticker": row.get("yf_ticker") or row["symbol"], "name": row.get("name") or row["symbol"],
+            "sector": row.get("sector"), "industry": None, "currency": row.get("currency", "USD"),
+            "financial_currency": row.get("currency", "USD"), "price": price, "market_cap": cap,
+            "enterprise_value": cap + debt - cash, "shares": shares, "total_cash": cash, "total_debt": debt,
+            "pe": float(rng.uniform(9, 45)), "forward_pe": float(rng.uniform(8, 35)), "ps": cap / rev_now, "ev_ebitda": float(rng.uniform(6, 30)),
+            "beta": float(rng.uniform(0.6, 1.7)), "dividend_yield": None, "revenue_ttm": rev_now, "fcf_ttm": fcf_now,
+            "ocf_ttm": fcf_now * 1.35, "revenue_growth": growth, "profit_margin": float(rng.uniform(0.05, 0.3)),
+            "operating_margin": float(rng.uniform(0.08, 0.4)),
+            "targets": {"low": mean * 0.75, "mean": mean, "median": mean * 0.99, "high": mean * 1.3, "analysts": 24},
+            "recommendation": None, "recommendation_mean": None,
+            "revenue": hist(rev_now, growth), "net_income": hist(rev_now * 0.15, growth * 1.1),
+            "fcf": hist(fcf_now, growth * 1.2), "ocf": hist(fcf_now * 1.35, growth * 1.1),
+            "capex": [{"year": r["year"], "value": -0.35 * r["value"]} for r in hist(fcf_now, growth * 1.2)],
+            "revenue_estimates": est(rev_now, growth * 0.9), "eps_estimates": est(price / 25.0, growth),
+            "source": "dane syntetyczne (demo)", "fetched": str(self.market.dates[-1].date()),
+        }
+
     def ff_factors(self, start, end) -> pd.DataFrame:
         return self.market.factors.loc[pd.Timestamp(start):pd.Timestamp(end)]

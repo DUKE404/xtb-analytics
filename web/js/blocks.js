@@ -14,11 +14,18 @@ function statement(b) {
   return el("section", { class: "statement" }, el("p", {}, b.text), b.sub ? el("p", { class: "sub" }, b.sub) : null);
 }
 
+/** Kolor liczby: strata zawsze czerwona; zysk zielony tylko tam, gdzie liczba jest wynikiem (ze znakiem). */
+function tone(value, kind, signed) {
+  if (typeof value !== "number" || !Number.isFinite(value) || !["pln", "zl", "pct"].includes(kind)) return "";
+  if (value < 0) return " neg";
+  return signed && value > 0 ? " pos" : "";
+}
+
 function metrics(b) {
   const list = el("ul", { class: "ledger" });
   for (const m of b.items) {
     const id = `tip-${++uid}`;
-    const value = el("span", { class: "value" }, fmt(m.value, m.fmt, m.digits, m.sign));
+    const value = el("span", { class: "value" + tone(m.value, m.fmt, m.sign) }, fmt(m.value, m.fmt, m.digits, m.sign));
     const label = el("span", { class: "label" }, el("span", {}, m.label), m.tip ? el("i", { class: "hint", "aria-hidden": "true" }, "?") : null);
     const note = m.note ? el("span", { class: "value-note" }, m.note) : null;
     if (!m.tip) {
@@ -47,7 +54,7 @@ function table(b) {
   const head = el("tr", {}, b.columns.map((c) => el("th", { class: numeric(c) ? null : "t", scope: "col" }, c.label)));
   const body = el("tbody");
   const draw = (rows) => body.replaceChildren(...rows.map((r) => el("tr", {}, b.columns.map((c, i) =>
-    el("td", { class: !numeric(c) && i > 0 ? "t" : null }, fmt(r[c.key], c.fmt, c.digits))))));
+    el("td", { class: (!numeric(c) && i > 0 ? "t" : "") + tone(r[c.key], c.fmt, false) || null }, fmt(r[c.key], c.fmt, c.digits))))));
   const limit = b.limit || 12;
   draw(b.rows.slice(0, limit));
   const wrap = el("div", { class: "table-wrap" }, el("table", { class: "data" }, el("thead", {}, head), body));

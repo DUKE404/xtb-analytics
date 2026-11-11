@@ -91,11 +91,24 @@ function accountLine(a) {
   return `${n(a.open, "otwarta pozycja", "otwarte pozycje", "otwartych pozycji")}, ${n(a.closed, "zamknięta", "zamknięte", "zamkniętych")}`;
 }
 
-/** Arkusz z paska tytułu: które rachunki wliczać i w jakiej walucie pokazywać kwoty. */
+/** Krótki opis wybranego okresu analizy, np. "12 mies." albo "01.06.2025-31.03.2026". */
+export function periodLabel(s) {
+  const short = { ytd: "od początku roku", "12m": "12 mies.", "24m": "24 mies.", "36m": "3 lata" };
+  const d = (iso) => fmtDate(iso);
+  if (s.until) return `${s.since_date ? d(s.since_date) : "start"}-${d(s.until)}`;
+  if (!s.since) return "";
+  return short[s.since] || `od ${d(s.since_date || s.since)}`;
+}
+
+/** Arkusz z paska tytułu: rachunki, waluta, CFD i okres analizy - jeden widok dla wszystkich ekranów. */
 export function viewSheet(reloadAll) {
   const s = api.state.session;
-  openSheet("Portfel i waluta", (close) => {
+  openSheet("Widok portfela", (close) => {
     let base = s.base;
+    let excludeCfd = !!s.exclude_cfd;
+    const isPreset = (v) => s.since_choices.some((o) => o.value === v);
+    let period = s.until || (s.since && !isPreset(s.since)) ? "custom" : (s.since || "");
+    const iso = (v) => (v ? String(v).slice(0, 10) : "");
     const picked = new Set(s.accounts.filter((a) => a.selected).map((a) => a.id));
     const status = el("div");
     const controls = el("div", { class: "controls" });
@@ -109,13 +122,33 @@ export function viewSheet(reloadAll) {
       options: s.base_choices.map((c) => ({ value: c, label: c })),
       tip: "Wszystkie kwoty, stopy zwrotu i ryzyko są przeliczane na tę walutę po kursach NBP. Zakładka Podatki zostaje w złotych." },
     (v) => { base = v; }));
+    if (s.has_cfd) {
+      controls.append(controlInput({ name: "exclude_cfd", type: "toggle", label: "Pomiń CFD (tylko akcje i ETF-y)", value: excludeCfd,
+        tip: "Pozycje CFD znikają z analiz, a ich wynik jest traktowany jak wpłata lub wypłata - nie zmienia stóp zwrotu ani ryzyka. Podatki dalej liczą wszystko." },
+      (on) => { excludeCfd = on; }));
+    }
+    const from = el("input", { class: "field", type: "date", id: "view-from", value: iso(s.since_date) || iso(s.first_date), min: iso(s.first_date), max: iso(s.last_date) });
+    const to = el("input", { class: "field", type: "date", id: "view-to", value: s.until || iso(s.last_date), min: iso(s.first_date), max: iso(s.last_date) });
+    const range = el("div", { class: "date-range", hidden: period !== "custom" ? "" : null },
+      el("label", { for: "view-from" }, "Od", from), el("label", { for: "view-to" }, "Do", to));
+    controls.append(controlInput({ name: "period", type: "select", label: "Okres analizy", value: period,
+      options: [...s.since_choices, { value: "custom", label: "Własny zakres dat" }],
+      tip: "Dotyczy wszystkich ekranów. Stan portfela z dnia przed początkiem okresu jest kapitałem startowym, więc wcześniejsza historia (np. z czasów małego rachunku) nie wpływa na stopy zwrotu ani obsunięcia." },
+    (v) => { period = v; range.hidden = v !== "custom"; }), range);
     const apply = el("button", { class: "btn", type: "button" }, "Zastosuj");
     apply.addEventListener("click", async () => {
       if (!picked.size) { status.replaceChildren(el("p", { class: "note warn" }, "Zaznacz przynajmniej jeden rachunek.")); return; }
+      const custom = period === "custom";
+      if (custom && from.value && to.value && from.value >= to.value) {
+        status.replaceChildren(el("p", { class: "note warn" }, "Data „Od” musi być wcześniejsza niż „Do”."));
+        return;
+      }
       apply.disabled = true;
       apply.textContent = "Przeliczam…";
       try {
-        await api.setView({ base, accounts: [...picked] });
+        await api.setView({ base, accounts: [...picked], exclude_cfd: excludeCfd,
+          since: custom ? (from.value > iso(s.first_date) ? from.value : "") : period,
+          until: custom && to.value < iso(s.last_date) ? to.value : "" });
         close();
         reloadAll();
       } catch (err) {

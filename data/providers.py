@@ -199,6 +199,96 @@ def fetch_french_factors() -> pd.DataFrame:
 # Dostawca "na żywo"
 # --------------------------------------------------------------------------- #
 
+def _stmt_rows(df, names) -> list[dict]:
+    """Wiersz rocznego sprawozdania -> [{"year": 2023, "value": ...}] rosnąco. `names`: możliwe nazwy pozycji."""
+    if df is None or not hasattr(df, "index") or not len(df):
+        return []
+    for name in names:
+        if name in df.index:
+            row = df.loc[name]
+            out = []
+            for when, v in row.items():
+                try:
+                    v, year = float(v), pd.Timestamp(when).year
+                except (TypeError, ValueError):
+                    continue
+                if v == v:
+                    out.append({"year": int(year), "value": v})
+            return sorted(out, key=lambda r: r["year"])
+    return []
+
+
+def _estimate_rows(df) -> list[dict]:
+    """Tabela prognoz analityków (yfinance: indeks 0q, +1q, 0y, +1y) -> lista słowników."""
+    if df is None or not hasattr(df, "iterrows") or not len(df):
+        return []
+    out = []
+    for period, r in df.iterrows():
+        def num(*keys):
+            for k in keys:
+                if k in r.index:
+                    try:
+                        v = float(r[k])
+                    except (TypeError, ValueError):
+                        continue
+                    if v == v:
+                        return v
+            return None
+        out.append({"period": str(period), "avg": num("avg"), "low": num("low"), "high": num("high"),
+                    "growth": num("growth"), "analysts": num("numberOfAnalysts"),
+                    "year_ago": num("yearAgoRevenue", "yearAgoEps")})
+    return out
+
+
+def fetch_fundamentals(ticker: str) -> dict:
+    """Dane o spółce z Yahoo Finance: wycena, sprawozdania roczne, prognozy i ceny docelowe analityków.
+
+    Każdy fragment jest pobierany osobno - brak jednego (np. prognoz dla małej spółki) nie psuje reszty.
+    """
+    try:
+        import yfinance as yf
+    except ImportError as exc:  # pragma: no cover
+        raise DataUnavailable("biblioteka yfinance nie jest zainstalowana") from exc
+    t = yf.Ticker(ticker)
+
+    def safe(fn, default=None):
+        try:
+            v = fn()
+            return default if v is None else v
+        except Exception:
+            return default
+
+    info = safe(lambda: dict(t.info), {}) or {}
+    if not info.get("marketCap") and not info.get("currentPrice") and not info.get("regularMarketPrice"):
+        raise DataUnavailable(f"yfinance: brak danych o spółce {ticker}")
+    g = lambda *keys: next((info[k] for k in keys if info.get(k) is not None), None)
+    targets = safe(lambda: dict(t.analyst_price_targets), {}) or {}
+    income, cash = safe(lambda: t.income_stmt), safe(lambda: t.cashflow)
+    return {
+        "ticker": ticker, "name": g("longName", "shortName"), "sector": g("sector"), "industry": g("industry"),
+        "currency": g("currency"), "financial_currency": g("financialCurrency", "currency"),
+        "price": g("currentPrice", "regularMarketPrice", "previousClose"),
+        "market_cap": g("marketCap"), "enterprise_value": g("enterpriseValue"), "shares": g("sharesOutstanding"),
+        "total_cash": g("totalCash"), "total_debt": g("totalDebt"),
+        "pe": g("trailingPE"), "forward_pe": g("forwardPE"), "ps": g("priceToSalesTrailing12Months"),
+        "ev_ebitda": g("enterpriseToEbitda"), "beta": g("beta"), "dividend_yield": g("dividendYield"),
+        "revenue_ttm": g("totalRevenue"), "fcf_ttm": g("freeCashflow"), "ocf_ttm": g("operatingCashflow"),
+        "revenue_growth": g("revenueGrowth"), "profit_margin": g("profitMargins"), "operating_margin": g("operatingMargins"),
+        "targets": {"low": targets.get("low", g("targetLowPrice")), "mean": targets.get("mean", g("targetMeanPrice")),
+                    "median": targets.get("median", g("targetMedianPrice")), "high": targets.get("high", g("targetHighPrice")),
+                    "analysts": g("numberOfAnalystOpinions")},
+        "recommendation": g("recommendationKey"), "recommendation_mean": g("recommendationMean"),
+        "revenue": _stmt_rows(income, ["Total Revenue", "Operating Revenue"]),
+        "net_income": _stmt_rows(income, ["Net Income", "Net Income Common Stockholders"]),
+        "fcf": _stmt_rows(cash, ["Free Cash Flow"]),
+        "ocf": _stmt_rows(cash, ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"]),
+        "capex": _stmt_rows(cash, ["Capital Expenditure"]),
+        "revenue_estimates": _estimate_rows(safe(lambda: t.revenue_estimate)),
+        "eps_estimates": _estimate_rows(safe(lambda: t.earnings_estimate)),
+        "source": "Yahoo Finance", "fetched": pd.Timestamp.now().strftime("%Y-%m-%d"),
+    }
+
+
 class LiveMarketData:
     name = "na żywo (yfinance → Stooq, NBP)"
     is_synthetic = False
@@ -231,6 +321,25 @@ class LiveMarketData:
         if factor != 1.0:
             df = df.assign(close=df["close"] * factor)
         return df
+
+    def fundamentals(self, row) -> dict:
+        """Dane o spółce (cache 24 h)."""
+        ticker = next((x.strip() for x in str(row.get("yf_ticker") or "").split("|") if x.strip()), "")
+        if not ticker:
+            raise DataUnavailable("brak tickera Yahoo w tabeli mapowań")
+        key = f"fund:{ticker}"
+        hit = self.cache.get_kv(key, max_age_hours=24.0)
+        if hit:
+            return json.loads(hit)
+        try:
+            data = fetch_fundamentals(ticker)
+        except DataUnavailable:
+            old = self.cache.get_kv(key)
+            if old:
+                return json.loads(old)
+            raise
+        self.cache.set_kv(key, json.dumps(data, default=lambda o: None))
+        return data
 
     def price_history(self, row, start, end) -> pd.DataFrame:
         key = f"{row['symbol']}|{row.get('yf_ticker', '')}|{row.get('stooq_ticker', '')}"

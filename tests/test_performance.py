@@ -115,7 +115,7 @@ def test_summary_on_sample(portfolio, market):
     assert 0.05 < s["volatility"] < 0.35 and -0.5 < s["max_drawdown"] < 0
     assert 0.2 < s["beta"] < 1.8 and np.isfinite(s["xirr"]) and np.isfinite(s["information_ratio"])
     cmp = perf.comparison_table(portfolio.returns, perf.levels_to_returns(market.benchmarks_base, portfolio.dates))
-    assert list(cmp.index)[0] == "Portfel" and {"WIG20", "WIG", "SP500", "MSCIW"} <= set(cmp.index)
+    assert list(cmp.index)[0] == "Portfel" and {"WIG20", "NDX", "SP500", "MSCIW"} <= set(cmp.index)
 
 
 # ------------------------------------------------------------------ atrybucja

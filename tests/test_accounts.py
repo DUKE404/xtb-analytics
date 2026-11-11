@@ -200,7 +200,7 @@ def test_display_currency_changes_units_not_the_portfolio(ctx_pln, ctx_usd):
     twr = lambda c: float((1 + c.pf.returns).prod() - 1)
     assert twr(ctx_pln) != pytest.approx(twr(ctx_usd), abs=1e-4)
     assert ctx_usd.bench_label("SP500") == "S&P 500" and ctx_pln.bench_label("SP500") == "S&P 500 (w PLN)"
-    assert ctx_usd.bench_label("WIG") == "WIG (w USD)"
+    assert ctx_usd.bench_label("WIG20") == "WIG20 (w USD)" and ctx_usd.bench_label("NDX") == "Nasdaq 100"
 
 
 def test_single_account_selection(files):

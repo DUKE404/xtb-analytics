@@ -45,9 +45,10 @@ class Params:
         return str(v).lower() in ("1", "true", "tak", "on", "yes")
 
 
-from server.screens import overview, performance, risk, sim, tax, trader  # noqa: E402
+from server.screens import companies, overview, performance, risk, sim, tax, trader  # noqa: E402
 
 SCREENS = {
+    "companies": companies.companies,
     "overview": overview.overview,
     "data": overview.data,
     "perf-summary": performance.summary,
@@ -86,6 +87,8 @@ NAV = [
         {"id": "sim-whatif", "label": "Co jeśli"}, {"id": "sim-optimize", "label": "Optymalizacja"}]},
 ]
 MORE = [
+    {"id": "companies", "label": "Spółki", "hint": "Odwrócony DCF, prognozy przychodów, przepływy, ceny docelowe analityków",
+     "screens": [{"id": "companies", "label": "Spółki"}]},
     {"id": "trader", "label": "Trader", "hint": "Skuteczność, wzorce zachowań, wielkość pozycji, koszty, reżimy rynku", "screens": [
         {"id": "trader-stats", "label": "Statystyki"}, {"id": "trader-patterns", "label": "Wzorce"},
         {"id": "trader-sizing", "label": "Wielkość pozycji"}, {"id": "trader-costs", "label": "Koszty"},

@@ -248,3 +248,28 @@ wyceniony jak akcja lub po złym poziomie cen. Pliku nie widziałem, dlatego pop
   podaje daty i pozycję o największym ujemnym wkładzie.
 - **Powłoka aplikacji** ładuje się najpierw z sieci (2,5 s na odpowiedź), dopiero potem z pamięci telefonu -
   po wdrożeniu nowa wersja jest od razu, bez dwukrotnego otwierania.
+
+## Widok portfela, moduł Spółki, układ na komputer
+
+- **CFD wyceniane wynikiem z raportu**: niezrealizowany wynik CFD = wynik brutto z raportu × część drogi ceny
+  od otwarcia do ceny końcowej (zamknięcia albo bieżącej). Nie zależy od mnożnika, waluty instrumentu ani
+  poziomu notowań. Gdy raport nie podaje wyniku (albo jest poniżej 1 jednostki waluty), zostaje wzór z mnożnikiem.
+- **Pomiń CFD**: pozycje CFD znikają, a ich operacje gotówkowe (symbol CFD albo typ close trade / swap /
+  rollover) stają się przepływem zewnętrznym. To wydzielenie portfela akcyjnego, nie usunięcie danych -
+  saldo gotówki zostaje zgodne z rachunkiem. Podatki liczą wszystko.
+- **Okres analizy** to wspólne ustawienie widoku (nie parametr pojedynczego ekranu): portfel jest liczony raz
+  na pełnej historii i przycinany, więc stopy dzienne w oknie są identyczne z pełną historią. Kapitałem
+  początkowym jest wartość z dnia przed początkiem. Minimalna długość okna: 2 tygodnie.
+- **Dlaczego to ważne przy małym rachunku na starcie**: TWR waży każdy dzień tak samo niezależnie od kapitału,
+  więc strata 90% na rachunku 500 zł zostaje w krzywej i w max drawdown na zawsze. Okno analizy i pomijanie
+  CFD to dwa uczciwe sposoby, żeby ocenić to, czym portfel jest dziś.
+- **Benchmarki**: WIG usunięty (Yahoo go nie ma, Stooq przestał odpowiadać), dodany Nasdaq 100 (^NDX).
+- **Spółki**: źródłem jest yfinance (info, income_stmt, cashflow, revenue_estimate, earnings_estimate,
+  analyst_price_targets), cache 24 h. Każdy fragment pobierany osobno - brak jednego nie psuje reszty.
+  Odwrócony DCF: FCF z ostatnich 12 miesięcy rośnie w stałym tempie przez 5/10/15 lat, potem wzrost wieczny
+  (Gordon); szukane tempo zrównuje wartość z EV (gdy brak EV - z kapitalizacją). Domyślnie dyskonto 10%,
+  wzrost wieczny 2,5%. Ceny docelowe i „nastawienie analityków” są opisane jako cudze opinie; aplikacja
+  dalej niczego nie rekomenduje.
+- **Kolory**: zysk zielony, strata czerwona (konwencja rynkowa) - zawsze razem ze znakiem +/−, więc kolor nie
+  jest jedynym nośnikiem informacji. W tabelach czerwone są wszystkie wartości ujemne.
+- **Układ na komputer** od 1024 px: ta sama treść i te same bloki, inny układ (CSS), bez osobnego kodu ekranów.

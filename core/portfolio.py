@@ -11,7 +11,7 @@ Konwencje (opisane też w ASSUMPTIONS.md):
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 import pandas as pd
@@ -68,6 +68,41 @@ class Portfolio:
     def total_pnl(self) -> float:
         return float(self.equity.iloc[-1] - self.flows.sum())
 
+    def window(self, start=None, end=None) -> "Portfolio":
+        """Portfel oglądany w wybranym okresie: stan z dnia przed `start` staje się kapitałem początkowym,
+        a dzień `end` - datą, na którą liczone są skład i ryzyko.
+
+        Stopy zwrotu i wyniki dzienne zostają bez zmian - znika tylko historia spoza okna (np. okres, gdy
+        rachunek był jeszcze mały albo prowadzony inaczej).
+        """
+        keep = np.ones(len(self.dates), dtype=bool)
+        if start is not None:
+            keep &= self.dates >= pd.Timestamp(start).normalize()
+        if end is not None:
+            keep &= self.dates <= pd.Timestamp(end).normalize()
+        if keep.all() or keep.sum() < 2:
+            return self
+        first = int(np.argmax(keep))
+        flows = self.flows[keep].copy()
+        if first > 0:
+            flows.iloc[0] += float(self.equity.iloc[first - 1])
+
+        # instrumenty, których w oknie nie było (ani pozycji, ani wyniku), znikają z widoku
+        active = [c for c in self.qty.columns
+                  if (self.qty.loc[keep, c] != 0).any() or (self.pnl.loc[keep, c].abs() > 1e-9).any()]
+        buckets = [c for c in self.pnl.columns if c not in self.qty.columns]
+
+        def cut(df, cols=active):
+            return None if df is None else df.loc[keep, cols]
+
+        return replace(self, dates=self.dates[keep], qty=cut(self.qty), cost_local=cut(self.cost_local),
+                       prices=cut(self.prices), fx=cut(self.fx), value=cut(self.value), exposure=cut(self.exposure),
+                       cash=self.cash[keep], equity=self.equity[keep], flows=flows, returns=self.returns[keep],
+                       pnl=cut(self.pnl, active + buckets), cash_by_symbol=cut(self.cash_by_symbol),
+                       cash_by_currency=cut(self.cash_by_currency, slice(None)),
+                       cash_fx_pnl=cut(self.cash_fx_pnl, slice(None)), meta=self.meta.loc[active],
+                       warnings=list(self.warnings))
+
     def invested_capital(self) -> float:
         return float(self.flows.sum())
 
@@ -94,12 +129,15 @@ def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, m
              przeliczana po bieżącym kursie; zmiana jej wartości z tytułu kursu trafia do wyniku (koszyk gotówki).
     """
     warnings: list[str] = []
-    pos_cols = ["symbol", "type", "volume", "open_time", "open_price", "close_time", "end_price"]
+    pos_cols = ["symbol", "type", "volume", "open_time", "open_price", "close_time", "end_price", "gross", "ccy"]
     c = closed.copy()
     c["end_price"] = pd.to_numeric(c["close_price"], errors="coerce") if "close_price" in c.columns else np.nan
     o = open_.copy()
     o["close_time"] = pd.NaT
     o["end_price"] = pd.to_numeric(o["market_price"], errors="coerce") if "market_price" in o.columns else np.nan
+    for d in (c, o):
+        d["gross"] = pd.to_numeric(d["gross_pl"], errors="coerce") if "gross_pl" in d.columns else np.nan
+        d["ccy"] = d["currency"].astype(str) if "currency" in d.columns else account_currency
     pos = pd.concat([c[pos_cols], o[pos_cols]], ignore_index=True) if len(c) or len(o) else \
         pd.DataFrame(columns=pos_cols)
 
@@ -185,10 +223,29 @@ def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, m
 
     pxv, fxv = px.values if m else np.zeros((n, 0)), fxs.values if m else np.zeros((n, 0))
 
+    rate: dict[str, np.ndarray] = {}
+
+    def acct_rate(c: str) -> np.ndarray:
+        """Kurs waluty rachunku do waluty bazowej, dzień po dniu."""
+        if c not in rate:
+            if c == base:
+                rate[c] = np.ones(n)
+            elif c in fx.columns and fx[c].notna().any():
+                rate[c] = _align(fx[[c]], dates, [c])[c].fillna(1.0).values
+            else:
+                warnings.append(f"Brak kursu {c}/{base} dla rachunku w {c} (przyjęto 1,00).")
+                rate[c] = np.ones(n)
+        return rate[c]
+
     # Wycena pozycji. Ceny transakcji z raportu są pewne; notowania dają tylko kształt ścieżki pomiędzy nimi.
     # Gdy poziom notowań nie pasuje do cen transakcji (split, pensy zamiast funtów, inny kontrakt, zły ticker),
     # pozycja jest wyceniana notowaniami przeskalowanymi tak, by w dniu otwarcia i zamknięcia zgadzały się z raportem.
-    mv = np.zeros((n, m))
+    # CFD z wynikiem w raporcie: niezrealizowany wynik = wynik z raportu x (jaka część drogi od ceny otwarcia do
+    # ceny końcowej jest już za nami). Nie zależy to od mnożnika, waluty instrumentu ani poziomu notowań.
+    mv = np.zeros((n, m))            # ilość x cena (do ekspozycji i ceny efektywnej)
+    mv_val = np.zeros((n, m))        # to samo, ale tylko pozycje wyceniane wzorem cena x ilość
+    cost_val = np.zeros((n, m))
+    upl_direct = np.zeros((n, m))    # wynik CFD wprost z raportu, już w walucie bazowej
     rescaled: set[str] = set()
     for p in pos.itertuples(index=False):
         i0 = day_idx(p.open_time)
@@ -202,16 +259,25 @@ def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, m
         r0 = p.open_price / series[i0] if series[i0] > 0 and p.open_price > 0 else 1.0
         r1 = p.end_price / series[anchor] if (p.end_price == p.end_price and p.end_price > 0 and series[anchor] > 0) else r0
         tol = CFD_LEVEL_TOLERANCE if is_cfd[j] else STOCK_LEVEL_TOLERANCE
-        if p.symbol in no_price or max(abs(np.log(r0)), abs(np.log(r1))) > tol:
+        sgn = -1.0 if p.type == "SELL" else 1.0
+        move = (p.end_price - p.open_price) if p.end_price == p.end_price else 0.0
+        direct = bool(is_cfd[j] and p.gross == p.gross and abs(p.gross) >= 1.0 and p.open_price > 0
+                      and abs(move) > 1e-9 * p.open_price and p.gross * sgn * move > 0)
+        if direct or p.symbol in no_price or max(abs(np.log(r0)), abs(np.log(r1))) > tol:
             span = anchor - i0
             w = (np.arange(i0, last + 1) - i0) / span if span > 0 else np.zeros(last + 1 - i0)
             k = np.exp((1.0 - w) * np.log(r0) + w * np.log(r1))
-            if p.symbol not in no_price:
+            if p.symbol not in no_price and not is_cfd[j]:
                 rescaled.add(p.symbol)
         else:
             k = 1.0
-        sgn = -1.0 if p.type == "SELL" else 1.0
-        mv[i0:last + 1, j] += sgn * p.volume * series[i0:last + 1] * k
+        path = series[i0:last + 1] * k
+        mv[i0:last + 1, j] += sgn * p.volume * path
+        if direct:
+            upl_direct[i0:last + 1, j] += p.gross * (path - p.open_price) / move * acct_rate(str(p.ccy))[i0:last + 1]
+        else:
+            mv_val[i0:last + 1, j] += sgn * p.volume * path
+            cost_val[i0:last + 1, j] += sgn * p.volume * p.open_price
     if rescaled:
         warnings.append("Notowania w innej skali niż ceny transakcji z raportu (split, inna waluta lub inny kontrakt) dla: "
                         + ", ".join(sorted(rescaled)) + ". Wycenę dopasowano do cen transakcji; sprawdź ticker w zakładce Tickery.")
@@ -220,21 +286,14 @@ def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, m
             pxv = np.where(np.abs(qty) > 1e-12, mv / qty, pxv)     # cena efektywna: wartość / ilość
         px = pd.DataFrame(pxv, index=dates, columns=symbols)
     nominal = mv * mult * fxv
-    upl = (mv - cost) * mult * fxv
+    upl = (mv_val - cost_val) * mult * fxv + upl_direct
     value = np.where(is_cfd, upl, nominal) if m else np.zeros((n, 0))
 
     # gotówka i przepływy: saldo prowadzone w walucie każdego rachunku, wyceniane dziennym kursem do waluty bazowej
     has_ccy = "currency" in cash.columns
     ccys = sorted(set(cash["currency"].dropna().astype(str))) if has_ccy and len(cash) else [account_currency]
-    rate = {}
     for c in ccys:
-        if c == base:
-            rate[c] = np.ones(n)
-        elif c in fx.columns and fx[c].notna().any():
-            rate[c] = _align(fx[[c]], dates, [c])[c].fillna(1.0).values
-        else:
-            warnings.append(f"Brak kursu {c}/{base} dla gotówki na rachunku (przyjęto 1,00).")
-            rate[c] = np.ones(n)
+        acct_rate(c)
     ccy_delta = {c: np.zeros(n) for c in ccys}
     flows = np.zeros(n)
     by_symbol = np.zeros((n, m))

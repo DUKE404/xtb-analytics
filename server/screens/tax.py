@@ -10,9 +10,10 @@ METHODS = [("nbp", "Kursy NBP (D-1)"), ("report", "Kwoty z raportu XTB")]
 
 
 def build(ctx, year: int, method: str) -> tax.TaxReport:
+    # podatki nie zależą od widoku: zawsze wszystkie instrumenty (także wyłączone CFD), cała historia, złote
     return ctx.memo(("tax", year, method), lambda: tax.build_report(
-        year, ctx.export_pln.closed, ctx.export_pln.open, ctx.export_pln.cash, ctx.pf.meta, ctx.market.fx_pln,
-        ctx.pf.qty, method))
+        year, ctx.export_pln.closed, ctx.export_pln.open, ctx.export_pln.cash, ctx.meta_full, ctx.market.fx_pln,
+        (ctx.pf_full or ctx.pf).qty, method))
 
 
 def years(ctx) -> list[int]:
@@ -34,6 +35,9 @@ def _scope_notes(ctx) -> list:
                           "cena w walucie instrumentu razy kurs NBP z dnia poprzedzającego transakcję."))
     if ctx.base != "PLN":
         out.append(B.note(f"Ta zakładka jest zawsze w złotych, niezależnie od waluty wyświetlania ({ctx.base})."))
+    if ctx.exclude_cfd or ctx.since_date is not None:
+        out.append(B.note("Podatki liczę zawsze z całej historii i ze wszystkich instrumentów, także gdy w widoku "
+                          "portfela pominięto CFD albo skrócono okres analizy."))
     return out
 
 

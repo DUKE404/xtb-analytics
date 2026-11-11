@@ -19,7 +19,7 @@ import pandas as pd
 from server.tooltips import TOOLTIPS
 
 # stałe przypisanie kolorów do bytów (kolor idzie za nazwą, nie za kolejnością)
-SERIES_COLORS = {"Portfel": 0, "WIG20": 1, "WIG": 2, "S&P 500": 3, "MSCI World ETF": 4, "Wpłaty netto": "neutral"}
+SERIES_COLORS = {"Portfel": 0, "WIG20": 1, "Nasdaq 100": 2, "S&P 500": 3, "MSCI World ETF": 4, "Wpłaty netto": "neutral"}
 _CCY_SUFFIX = re.compile(r" \(w [A-Z]{3}\)$")
 
 

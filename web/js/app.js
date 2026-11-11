@@ -2,7 +2,7 @@
 
 import * as api from "./api.js";
 import { renderScreen } from "./blocks.js";
-import { aiView, errorNote, resetChat, importView, loginView, mappingView, moreView, settingsView, viewSheet } from "./client.js";
+import { aiView, errorNote, resetChat, importView, loginView, mappingView, moreView, periodLabel, settingsView, viewSheet } from "./client.js";
 import { el, fmtDate } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
@@ -14,6 +14,12 @@ const ICONS = {
   shield: "M12 4l7 2.5v5c0 4.2-2.9 7.3-7 8.5-4.1-1.2-7-4.3-7-8.5v-5L12 4z",
   dice: "M5 5h14v14H5zM9 9h.01M15 15h.01M15 9h.01M9 15h.01M12 12h.01",
   more: "M6 12h.01M12 12h.01M18 12h.01",
+  companies: "M4 20V9l6-4v15M10 20V11l10-4v13M3 20h18M13.5 13h3M13.5 16.5h3",
+  trader: "M4 17l5-5 3.5 3.5L20 8M15 8h5v5",
+  tax: "M7 4h10v16l-2.5-1.5L12 20l-2.5-1.5L7 20zM10 9h4M10 13h4",
+  ai: "M12 4v2.5M12 17.5V20M4 12h2.5M17.5 12H20M9 9h6v6H9z",
+  import: "M12 4v10M8 10l4 4 4-4M5 19h14",
+  settings: "M5 8h9M18 8h1M5 16h1M10 16h9M16 6v4M8 14v4",
 };
 const CLIENT_SCREENS = new Set(["import", "mapping", "settings", "ai"]);
 const screenParams = new Map();   // parametry kontrolek zapamiętane per ekran
@@ -45,11 +51,16 @@ function icon(name) {
   return s;
 }
 
-function drawTabs(activeId) {
-  const { tabs } = sections();
-  const items = [...tabs.map((t) => ({ id: t.id, label: t.label, icon: t.icon })), { id: "more", label: "Więcej", icon: "more" }];
+/** Telefon: 4 działy + "Więcej" na dole. Szeroki ekran: te same przyciski jako boczny panel, a działy
+ *  z "Więcej" (klasa .extra) są w nim widoczne od razu. */
+function drawTabs(activeId, sectionId = activeId) {
+  const { tabs, more } = sections();
+  const items = [...tabs.map((t) => ({ id: t.id, label: t.label, icon: t.icon })), { id: "more", label: "Więcej", icon: "more" },
+    ...more.map((t) => ({ id: t.id, label: t.label, icon: t.id, extra: true }))];
   tabsEl.replaceChildren(...items.map((t) => {
-    const b = el("button", { type: "button", "aria-current": t.id === activeId ? "page" : null }, icon(t.icon), el("span", {}, t.label));
+    const current = t.extra ? t.id === sectionId : t.id === activeId;
+    const b = el("button", { type: "button", class: t.extra ? "extra" : (t.id === "more" ? "more" : null), "aria-current": current ? "page" : null },
+      icon(t.icon), el("span", {}, t.label));
     b.addEventListener("click", () => go(t.id));
     return b;
   }));
@@ -77,8 +88,9 @@ function drawBar(titleText) {
   if (!s) return;
   const accounts = s.accounts || [];
   const chosen = accounts.filter((a) => a.selected).length;
-  const what = accounts.length > 1 ? `${chosen} z ${accounts.length} rachunków · ${s.base}` : s.base;
-  const pick = el("button", { class: "view-btn", type: "button", "aria-label": `Rachunki i waluta wyświetlania: ${what}` }, what);
+  const what = [accounts.length > 1 ? `${chosen} z ${accounts.length} rachunków` : null, s.base,
+    s.exclude_cfd ? "bez CFD" : null, periodLabel(s) || null].filter(Boolean).join(" · ");
+  const pick = el("button", { class: "view-btn", type: "button", "aria-label": `Widok portfela: ${what}` }, what);
   pick.addEventListener("click", () => viewSheet(reloadAll));
   barMeta.append(pick, el("div", { class: s.is_demo ? "demo" : null }, s.is_demo ? "dane przykładowe" : `stan na ${fmtDate(s.as_of)}`));
 }
@@ -155,7 +167,7 @@ function route() {
   const screens = section.screens || [{ id: section.id, label: section.label }];
   const screen = screens.find((s) => s.id === scr) || screens[0];
   const inMore = more.includes(section);
-  drawTabs(inMore ? "more" : section.id);
+  drawTabs(inMore ? "more" : section.id, section.id);
   drawSubnav(section, screen.id);
   drawBar(section.label);
 
