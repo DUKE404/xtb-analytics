@@ -2,7 +2,7 @@
 
 import * as api from "./api.js";
 import { renderScreen } from "./blocks.js";
-import { errorNote, importView, loginView, mappingView, moreView, settingsView } from "./client.js";
+import { aiView, errorNote, resetChat, importView, loginView, mappingView, moreView, settingsView } from "./client.js";
 import { el, fmtDate } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
@@ -15,7 +15,7 @@ const ICONS = {
   dice: "M5 5h14v14H5zM9 9h.01M15 15h.01M15 9h.01M9 15h.01M12 12h.01",
   more: "M6 12h.01M12 12h.01M18 12h.01",
 };
-const CLIENT_SCREENS = new Set(["import", "mapping", "settings"]);
+const CLIENT_SCREENS = new Set(["import", "mapping", "settings", "ai"]);
 const screenParams = new Map();   // parametry kontrolek zapamiętane per ekran
 let loadToken = 0;
 
@@ -97,6 +97,7 @@ function showLogin() {
 
 function reloadAll() {
   screenParams.clear();
+  resetChat();        // inne dane = nowa rozmowa
   route();
 }
 
@@ -157,7 +158,8 @@ function route() {
   if (CLIENT_SCREENS.has(screen.id)) {
     main.dataset.screen = screen.id;
     const view = screen.id === "import" ? importView(route, reloadAll)
-      : screen.id === "mapping" ? mappingView(reloadAll) : settingsView(reloadAll, showLogin);
+      : screen.id === "mapping" ? mappingView(reloadAll)
+        : screen.id === "ai" ? aiView() : settingsView(reloadAll, showLogin);
     show(view);
     drawBar(section.label);
     window.scrollTo(0, 0);

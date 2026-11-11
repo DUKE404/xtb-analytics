@@ -2,7 +2,7 @@
 
 import * as api from "./api.js";
 import { controlInput } from "./blocks.js";
-import { el, fmt, fmtDate } from "./format.js";
+import { el, fmt, fmtDate, richText } from "./format.js";
 import { prefs } from "./store.js";
 
 // --------------------------------------------------------------------------- arkusz od dołu
@@ -75,11 +75,12 @@ export function moreView(items, go) {
 // --------------------------------------------------------------------------- import
 
 const EXPORT_STEPS = [
-  ["Zaloguj się do xStation 5", " w przeglądarce albo w aplikacji na komputerze."],
-  ["Otwórz zakładkę Historia", " w dolnym panelu."],
-  ["Kliknij Eksportuj", " (ikona strzałki w dół po prawej stronie panelu)."],
-  ["Wybierz cały dostępny zakres dat", " - od otwarcia rachunku - i zaznacz wszystkie raporty: zamknięte pozycje, otwarte pozycje, operacje gotówkowe."],
-  ["Pobierz plik .xlsx", " i wgraj go tutaj. Na telefonie znajdziesz go w Plikach lub Pobranych."],
+  ["Zaloguj się do xStation 5", " na komputerze (w przeglądarce albo w aplikacji)."],
+  ["Otwórz Historię rachunku", " (Account history) - zakładka nad wykresem, obok Edukacji, Kalendarza i Wiadomości."],
+  ["Wejdź w Operacje gotówkowe", " i kliknij Eksportuj po prawej stronie."],
+  ["Ustaw pełny zakres dat", " - od otwarcia rachunku do dziś - i format XLSX albo CSV."],
+  ["Powtórz dla zamkniętych i otwartych pozycji", ", jeśli xStation zapisuje każdy raport w osobnym pliku."],
+  ["Wgraj wszystkie pliki naraz", " - tutaj, z komputera albo z telefonu (Pliki / Pobrane). Aplikacja sama rozpozna, który jest który."],
 ];
 
 export function importView(rerender, reloadAll) {
@@ -252,6 +253,104 @@ export function settingsView(reloadAll, showLogin) {
   }
   root.append(buttons, status);
   return root;
+}
+
+// --------------------------------------------------------------------------- AI: memo ryzyka i czat
+
+/** Prosty, bezpieczny markdown: nagłówki "## ", wypunktowania "- ", **pogrubienia**. Bez innerHTML. */
+function markdownLite(text) {
+  const box = el("div", { class: "memo" });
+  let list = null;
+  for (const raw of String(text).split("\n")) {
+    const line = raw.trim();
+    if (!line) { list = null; continue; }
+    const h = line.match(/^#{1,4}\s+(.*)$/);
+    const li = line.match(/^(?:[-*•]|\d+[.)])\s+(.*)$/);
+    if (h) { list = null; box.append(el("h3", {}, h[1].replace(/\*\*/g, ""))); }
+    else if (li) {
+      if (!list) { list = el("ul", { class: "bullets" }); box.append(list); }
+      list.append(richText(li[1], el("li")));
+    } else { list = null; box.append(richText(line, el("p"))); }
+  }
+  return box;
+}
+
+const chatHistory = [];   // rozmowa żyje do odświeżenia strony albo zmiany danych
+
+export function aiView() {
+  const cfg = () => api.settings();
+  const root = el("div", { class: "screen" });
+  root.append(el("section", { class: "statement" },
+    el("p", {}, "Memo ryzyka pisze model Claude na podstawie Twoich metryk."),
+    el("p", { class: "sub" }, "Do modelu trafiają tylko liczby zbiorcze i nazwy najważniejszych pozycji. Bez imienia i nazwiska, numeru rachunku i listy transakcji.")));
+
+  const memoOut = el("div");
+  const memoBtn = el("button", { class: "btn", type: "button" }, "Napisz memo ryzyka");
+  memoBtn.addEventListener("click", async () => {
+    memoBtn.disabled = true;
+    memoOut.replaceChildren(el("p", { class: "note" }, el("span", { class: "pulse" }), "Model pisze memo. Zwykle trwa to kilkanaście sekund."));
+    try {
+      const out = await api.post("ai/memo", { rf: cfg().rf, bench: cfg().bench });
+      memoOut.replaceChildren(markdownLite(out.text), el("p", { class: "caption" }, `Model: ${out.model}. Memo opisuje liczby, nie jest rekomendacją inwestycyjną.`));
+      memoBtn.textContent = "Napisz memo jeszcze raz";
+    } catch (err) {
+      memoOut.replaceChildren(errorNote(err));
+    } finally {
+      memoBtn.disabled = false;
+    }
+  });
+  root.append(memoBtn, memoOut);
+
+  const pre = el("pre", { class: "json" }, "Ładuję…");
+  const sent = el("details", { class: "section" }, el("summary", {}, "Co dokładnie zostanie wysłane"), el("div", { class: "section-body" }, pre));
+  sent.addEventListener("toggle", async () => {
+    if (!sent.open || sent.dataset.loaded) return;
+    try {
+      const out = await api.get(`ai/payload?rf=${cfg().rf}&bench=${cfg().bench}`);
+      pre.textContent = JSON.stringify(out.payload, null, 2);
+      sent.dataset.loaded = "1";
+    } catch (err) { pre.textContent = err.message; }
+  });
+  root.append(sent);
+
+  const log = el("div", { class: "chat-log", "aria-live": "polite" });
+  const draw = () => log.replaceChildren(...chatHistory.map((m) =>
+    el("div", { class: `msg ${m.role}` }, m.role === "assistant" ? markdownLite(m.content) : m.content)));
+  draw();
+  const input = el("input", { class: "field", type: "text", placeholder: "np. Co najbardziej zwiększa moje ryzyko?", "aria-label": "Pytanie o portfel",
+    maxlength: "2000", autocomplete: "off" });
+  const send = el("button", { class: "btn", type: "submit" }, "Zapytaj");
+  const status = el("div");
+  const form = el("form", { class: "chat-form" }, input, send);
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if (!q) return;
+    chatHistory.push({ role: "user", content: q });
+    input.value = "";
+    draw();
+    send.disabled = true;
+    status.replaceChildren(el("p", { class: "caption" }, el("span", { class: "pulse" }), "Model odpowiada…"));
+    try {
+      const out = await api.post("ai/chat", { messages: chatHistory, rf: cfg().rf, bench: cfg().bench });
+      chatHistory.push({ role: "assistant", content: out.text });
+      status.replaceChildren();
+    } catch (err) {
+      chatHistory.pop();
+      input.value = q;
+      status.replaceChildren(errorNote(err));
+    } finally {
+      send.disabled = false;
+      draw();
+    }
+  });
+  root.append(el("section", {}, el("h2", { class: "block-title" }, "Zapytaj o swój portfel"),
+    el("p", { class: "caption", style: "margin:0 0 12px" }, "Odpowiedzi opierają się wyłącznie na metrykach policzonych w aplikacji."), log, status, form));
+  return root;
+}
+
+export function resetChat() {
+  chatHistory.length = 0;
 }
 
 export { errorNote };

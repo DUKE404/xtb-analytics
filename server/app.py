@@ -62,7 +62,8 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
         return os.environ.get("APP_PASSWORD", "").strip()
 
     def ai_enabled() -> bool:
-        return bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
+        from core import ai
+        return ai.enabled()
 
     def ok(payload, status: int = 200) -> Response:
         return Response(json.dumps(jsonable(payload), ensure_ascii=False, allow_nan=False),
@@ -209,6 +210,41 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
         out["ms"] = int((time.time() - t0) * 1000)
         return ok(out)
 
+    def ai_payload(sid):
+        from core import ai
+        from server import ai_payload as builder
+
+        if not ai.enabled():
+            raise ApiError("Dział AI jest wyłączony - na serwerze nie ustawiono ANTHROPIC_API_KEY.", 404, "ai_disabled")
+        ctx = get_ctx(sid)
+        body = request.get_json(silent=True) or {}
+        p = Params({**dict(request.args), **{k: v for k, v in body.items() if k in ("rf", "bench")}})
+        return ctx.memo(("ai_payload", round(p.rf, 4), p.bench), lambda: builder.build(ctx, p.rf, p.bench)), body
+
+    @app.get("/api/session/<sid>/ai/payload")
+    def ai_payload_view(sid):
+        payload, _ = ai_payload(sid)
+        return ok({"payload": payload})
+
+    @app.post("/api/session/<sid>/ai/memo")
+    def ai_memo(sid):
+        from core import ai
+        payload, _ = ai_payload(sid)
+        try:
+            return ok({"text": ai.risk_memo(payload), "model": ai.model_name()})
+        except ai.AIError as exc:
+            raise ApiError(str(exc), 502, "ai_error") from exc
+
+    @app.post("/api/session/<sid>/ai/chat")
+    def ai_chat(sid):
+        from core import ai
+        payload, body = ai_payload(sid)
+        history = body.get("messages") if isinstance(body.get("messages"), list) else []
+        try:
+            return ok({"text": ai.chat(payload, history), "model": ai.model_name()})
+        except ai.AIError as exc:
+            raise ApiError(str(exc), 502 if history else 400, "ai_error") from exc
+
     @app.get("/api/session/<sid>/tax/<int:year>/<method>/<name>")
     def tax_export(sid, year, method, name):
         """Eksport zestawienia podatkowego: PDF albo CSV (średnik, przecinek dziesiętny, BOM dla Excela)."""
@@ -250,6 +286,8 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
             resp.headers["Cache-Control"] = "no-cache"      # zawsze sprawdzaj świeżość; offline obsługuje service worker
         if path == "sw.js":
             resp.headers["Service-Worker-Allowed"] = "/"
+        if path.endswith(".webmanifest"):
+            resp.headers["Content-Type"] = "application/manifest+json; charset=utf-8"
         return resp
 
     return app

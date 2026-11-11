@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import threading
 import time
 from contextlib import closing
 
@@ -16,7 +17,8 @@ class Cache:
         self.path = path
         if path != ":memory:":
             os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        self._conn = sqlite3.connect(path, check_same_thread=False)
+        self._lock = threading.RLock()        # jedno połączenie używane z wielu wątków (równoległe pobieranie)
+        self._conn = sqlite3.connect(path, check_same_thread=False, timeout=30)
         with self._conn:
             self._conn.executescript(
                 """
@@ -32,59 +34,66 @@ class Cache:
 
     # ------------------------------------------------------------------ #
     def read(self, kind: str, key: str, start=None, end=None) -> pd.DataFrame:
-        q = "SELECT date, close, volume FROM series WHERE kind=? AND key=?"
-        args: list = [kind, key]
-        if start is not None:
-            q += " AND date>=?"
-            args.append(pd.Timestamp(start).strftime("%Y-%m-%d"))
-        if end is not None:
-            q += " AND date<=?"
-            args.append(pd.Timestamp(end).strftime("%Y-%m-%d"))
-        with closing(self._conn.execute(q + " ORDER BY date", args)) as cur:
-            rows = cur.fetchall()
-        df = pd.DataFrame(rows, columns=["date", "close", "volume"])
-        df["date"] = pd.to_datetime(df["date"])
-        return df.set_index("date").astype(float)
+        with self._lock:
+            q = "SELECT date, close, volume FROM series WHERE kind=? AND key=?"
+            args: list = [kind, key]
+            if start is not None:
+                q += " AND date>=?"
+                args.append(pd.Timestamp(start).strftime("%Y-%m-%d"))
+            if end is not None:
+                q += " AND date<=?"
+                args.append(pd.Timestamp(end).strftime("%Y-%m-%d"))
+            with closing(self._conn.execute(q + " ORDER BY date", args)) as cur:
+                rows = cur.fetchall()
+            df = pd.DataFrame(rows, columns=["date", "close", "volume"])
+            df["date"] = pd.to_datetime(df["date"])
+            return df.set_index("date").astype(float)
 
     def write(self, kind: str, key: str, df: pd.DataFrame) -> None:
-        if df is None or not len(df):
-            return
-        vol = df["volume"] if "volume" in df.columns else pd.Series(float("nan"), index=df.index)
-        rows = [(kind, key, pd.Timestamp(d).strftime("%Y-%m-%d"), None if pd.isna(c) else float(c),
-                 None if pd.isna(v) else float(v)) for d, c, v in zip(df.index, df["close"], vol)]
-        with self._conn:
-            self._conn.executemany("INSERT OR REPLACE INTO series VALUES (?,?,?,?,?)", rows)
+        with self._lock:
+            if df is None or not len(df):
+                return
+            vol = df["volume"] if "volume" in df.columns else pd.Series(float("nan"), index=df.index)
+            rows = [(kind, key, pd.Timestamp(d).strftime("%Y-%m-%d"), None if pd.isna(c) else float(c),
+                     None if pd.isna(v) else float(v)) for d, c, v in zip(df.index, df["close"], vol)]
+            with self._conn:
+                self._conn.executemany("INSERT OR REPLACE INTO series VALUES (?,?,?,?,?)", rows)
 
     def coverage(self, kind: str, key: str):
-        with closing(self._conn.execute(
-                "SELECT start, end, fetched_at, source FROM coverage WHERE kind=? AND key=?", (kind, key))) as cur:
-            row = cur.fetchone()
-        if not row:
-            return None
-        return {"start": pd.Timestamp(row[0]), "end": pd.Timestamp(row[1]), "fetched_at": row[2], "source": row[3]}
+        with self._lock:
+            with closing(self._conn.execute(
+                    "SELECT start, end, fetched_at, source FROM coverage WHERE kind=? AND key=?", (kind, key))) as cur:
+                row = cur.fetchone()
+            if not row:
+                return None
+            return {"start": pd.Timestamp(row[0]), "end": pd.Timestamp(row[1]), "fetched_at": row[2], "source": row[3]}
 
     def set_coverage(self, kind: str, key: str, start, end, source: str = "") -> None:
-        with self._conn:
-            self._conn.execute("INSERT OR REPLACE INTO coverage VALUES (?,?,?,?,?,?)",
-                               (kind, key, pd.Timestamp(start).strftime("%Y-%m-%d"),
-                                pd.Timestamp(end).strftime("%Y-%m-%d"), time.time(), source))
+        with self._lock:
+            with self._conn:
+                self._conn.execute("INSERT OR REPLACE INTO coverage VALUES (?,?,?,?,?,?)",
+                                   (kind, key, pd.Timestamp(start).strftime("%Y-%m-%d"),
+                                    pd.Timestamp(end).strftime("%Y-%m-%d"), time.time(), source))
 
     def get_kv(self, key: str, max_age_hours: float | None = None):
-        with closing(self._conn.execute("SELECT value, updated_at FROM kv WHERE key=?", (key,))) as cur:
-            row = cur.fetchone()
-        if not row:
-            return None
-        if max_age_hours is not None and time.time() - row[1] > max_age_hours * 3600:
-            return None
-        return row[0]
+        with self._lock:
+            with closing(self._conn.execute("SELECT value, updated_at FROM kv WHERE key=?", (key,))) as cur:
+                row = cur.fetchone()
+            if not row:
+                return None
+            if max_age_hours is not None and time.time() - row[1] > max_age_hours * 3600:
+                return None
+            return row[0]
 
     def set_kv(self, key: str, value: str) -> None:
-        with self._conn:
-            self._conn.execute("INSERT OR REPLACE INTO kv VALUES (?,?,?)", (key, value, time.time()))
+        with self._lock:
+            with self._conn:
+                self._conn.execute("INSERT OR REPLACE INTO kv VALUES (?,?,?)", (key, value, time.time()))
 
     def clear(self) -> None:
-        with self._conn:
-            self._conn.executescript("DELETE FROM series; DELETE FROM coverage; DELETE FROM kv;")
+        with self._lock:
+            with self._conn:
+                self._conn.executescript("DELETE FROM series; DELETE FROM coverage; DELETE FROM kv;")
 
     # ------------------------------------------------------------------ #
     def cached_fetch(self, kind: str, key: str, start, end, fetcher, max_age_hours: float = 12.0):

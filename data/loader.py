@@ -53,20 +53,34 @@ def load_market(export: XTBExport, mapping: pd.DataFrame, provider, as_of=None, 
     symbols = list(dict.fromkeys(list(export.symbols) + list(extra_symbols)))
 
     prices, volumes = {}, {}
-    for s in symbols:
-        if s not in mp.index:
-            warnings.append(f"{s}: brak w tabeli mapowań.")
-            continue
-        row = mp.loc[s].to_dict() | {"symbol": s}
+
+    def fetch(sym):
+        row = mp.loc[sym].to_dict() | {"symbol": sym}
         try:
             df = provider.price_history(row, start, as_of)
-            if len(df):
-                prices[s] = df["close"]
-                volumes[s] = df["volume"] if "volume" in df.columns else np.nan
-            else:
-                warnings.append(f"{s}: źródło nie zwróciło notowań.")
+            return sym, df, None if len(df) else f"{sym}: źródło nie zwróciło notowań."
         except Exception as exc:
-            warnings.append(f"{s}: nie udało się pobrać notowań ({exc}).")
+            return sym, None, f"{sym}: nie udało się pobrać notowań ({exc})."
+
+    todo = []
+    for sym in symbols:
+        if sym in mp.index:
+            todo.append(sym)
+        else:
+            warnings.append(f"{sym}: brak w tabeli mapowań.")
+    workers = int(getattr(provider, "max_workers", 1) or 1)
+    if workers > 1 and len(todo) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=workers) as pool:    # pobieranie to czekanie na sieć - wątki wystarczą
+            results = list(pool.map(fetch, todo))
+    else:
+        results = [fetch(sym) for sym in todo]
+    for sym, df, warn in results:
+        if warn:
+            warnings.append(warn)
+        if df is not None and len(df):
+            prices[sym] = df["close"]
+            volumes[sym] = df["volume"] if "volume" in df.columns else np.nan
 
     currencies = sorted(set(mp.reindex(symbols)["currency"].dropna()) | {"USD", "EUR", "PLN"}
                         | ({export.currency} if export.currency else set()))

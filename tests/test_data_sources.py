@@ -126,3 +126,47 @@ def test_synthetic_market_is_deterministic():
     s, cur = a.benchmark("WIG20")
     assert cur == "PLN" and s.equals(a.asset("W20")["close"].rename("WIG20"))
     assert a.asset("NIEZNANY.US")["close"].gt(0).all()
+
+
+def test_parallel_fetch_gives_same_result_as_sequential(export, mapping):
+    """Dostawca 'na żywo' pobiera kilka instrumentów naraz; wynik musi być identyczny jak po kolei."""
+    import threading
+
+    from data.loader import load_market
+    from data.synthetic import SyntheticMarketData
+
+    class Parallel(SyntheticMarketData):
+        max_workers = 4
+
+        def __init__(self):
+            super().__init__()
+            self.threads = set()
+
+        def price_history(self, row, start, end):
+            self.threads.add(threading.current_thread().name)
+            if row["symbol"] == "KO.US":
+                raise DataUnavailable("brak danych")
+            return super().price_history(row, start, end)
+
+    par = Parallel()
+    a = load_market(export, mapping, par)
+    b = load_market(export, mapping, SyntheticMarketData())
+    assert len(par.threads) > 1                                    # faktycznie użyto kilku wątków
+    assert "KO.US" not in a.prices.columns and any("KO.US" in w for w in a.warnings)
+    common = [c for c in b.prices.columns if c != "KO.US"]
+    assert a.prices[common].equals(b.prices[common])
+
+
+def test_cache_is_safe_across_threads(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    cache = Cache(str(tmp_path / "c.sqlite"))
+    idx = pd.bdate_range("2025-01-01", "2025-03-31")
+
+    def work(i):
+        df, _, _ = cache.cached_fetch("px", f"S{i % 5}", "2025-01-01", "2025-03-31",
+                                      lambda s, e: (pd.DataFrame({"close": float(i % 5), "volume": 1.0}, index=idx), "t"))
+        return len(df)
+
+    with ThreadPoolExecutor(8) as pool:
+        assert set(pool.map(work, range(40))) == {len(idx)}

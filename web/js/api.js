@@ -158,6 +158,10 @@ export function screen(name, params = {}) {
   });
 }
 
+export function get(path) {
+  return withSession((sid) => request(`/api/session/${sid}/${path}`));
+}
+
 export function post(path, json) {
   return withSession((sid) => request(`/api/session/${sid}/${path}`, { method: "POST", json, timeout: 180000 }));
 }

@@ -156,3 +156,23 @@ def test_mapping_overrides():
     mp = build_mapping(["PKN.PL", "AAPL.US"], ov).set_index("symbol")
     assert mp.at["PKN.PL", "yf_ticker"] == "XXX.WA" and mp.at["PKN.PL", "sector"] == "Moje"
     assert mp.at["PKN.PL", "currency"] == "PLN" and mp.at["AAPL.US", "yf_ticker"] == "AAPL"
+
+
+def test_separate_xstation_csv_files_are_recognised_by_content(sample_data):
+    """xStation zapisuje każdy raport w osobnym pliku (xStation5_cashOperations_<rachunek>_<daty>.csv)."""
+    def csv(df):
+        out = df.copy()
+        for c in out.columns:
+            if out[c].dtype.kind == "M":
+                out[c] = out[c].dt.strftime("%d.%m.%Y %H:%M:%S")
+        return out.to_csv(sep=";", index=False, decimal=",").encode("utf-8-sig")
+
+    files = [("xStation5_cashOperations_15102024_01-01-2024--06-11-2026_PLN.csv", csv(sample_data["cash"])),
+             ("xStation5_closedPositions_15102024_01-01-2024--06-11-2026_PLN.csv", csv(sample_data["closed"])),
+             ("xStation5_openPositions_15102024_PLN.csv", csv(sample_data["open"]))]
+    exp = parse_export(files)
+    assert len(exp.cash) == len(sample_data["cash"]) and len(exp.closed) == len(sample_data["closed"])
+    assert len(exp.open) == len(sample_data["open"])
+    assert exp.cash["amount"].sum() == pytest.approx(sample_data["balance"], abs=0.01)
+    # numer rachunku "15102024" w nazwie pliku nie może zostać wzięty za datę raportu
+    assert exp.as_of == max(exp.cash["time"].max(), exp.closed["close_time"].max(), exp.open["open_time"].max()).normalize()

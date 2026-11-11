@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import zipfile
 
 import numpy as np
@@ -191,6 +192,7 @@ def fetch_french_factors() -> pd.DataFrame:
 class LiveMarketData:
     name = "na żywo (yfinance → Stooq, NBP)"
     is_synthetic = False
+    max_workers = int(os.environ.get("FETCH_WORKERS", "4") or 1)   # ile instrumentów pobierać naraz
 
     def __init__(self, cache: Cache | None = None):
         self.cache = cache or Cache()

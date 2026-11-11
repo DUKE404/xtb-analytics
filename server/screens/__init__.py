@@ -92,12 +92,13 @@ MORE = [
         {"id": "trader-regimes", "label": "Reżimy"}]},
     {"id": "tax", "label": "Podatki", "hint": "Zestawienie do PIT-38: FIFO, kursy NBP, dywidendy zagraniczne",
      "screens": [{"id": "tax", "label": "PIT-38"}]},
+    {"id": "ai", "label": "AI", "hint": "Memo ryzyka i pytania o portfel (model Claude)", "screens": [{"id": "ai", "label": "AI"}]},
     {"id": "import", "label": "Dane i import", "hint": "Wgraj eksport z xStation 5, popraw tickery", "screens": [
         {"id": "import", "label": "Import"}, {"id": "mapping", "label": "Tickery"}, {"id": "data", "label": "Wczytane dane"}]},
     {"id": "settings", "label": "Ustawienia", "hint": "Benchmark, stopa wolna od ryzyka, instalacja na telefonie",
      "screens": [{"id": "settings", "label": "Ustawienia"}]},
 ]
-CLIENT_SCREENS = {"import", "mapping", "settings"}   # rysowane w całości po stronie telefonu (web/js/client.js)
+CLIENT_SCREENS = {"import", "mapping", "settings", "ai"}   # rysowane w całości po stronie telefonu (web/js/client.js)
 
 
 def nav_config(ai_enabled: bool = False) -> dict:

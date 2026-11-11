@@ -1,0 +1,19 @@
+# Wdrożenie na Render (https://render.com) jednym kliknięciem: New > Blueprint > wskaż to repozytorium.
+# Darmowa instancja: 512 MB RAM, zasypia po 15 minutach bez ruchu i budzi się przy pierwszym wejściu.
+services:
+  - type: web
+    name: xtb-analytics
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    # jeden proces (sesje żyją w pamięci), kilka wątków; długi timeout na pierwsze pobranie notowań
+    startCommand: gunicorn server.app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 180
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: APP_PASSWORD        # hasło do aplikacji - Render zapyta o nie przy tworzeniu usługi
+        sync: false
+      - key: ANTHROPIC_API_KEY   # opcjonalnie: włącza dział AI; można zostawić puste
+        sync: false

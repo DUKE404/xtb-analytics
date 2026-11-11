@@ -17,19 +17,23 @@ def target_daily_mean(annual_return: float, sigma_daily: float) -> float:
     return float(np.log1p(annual_return) / TRADING_DAYS + 0.5 * sigma_daily ** 2)
 
 
+def bootstrap_index(n: int, horizon: int, n_paths: int, block: int = 20, seed: int = 42) -> np.ndarray:
+    """Indeksy dni historii dla każdej ścieżki: całe bloki kolejnych dni (z zawijaniem), sklejone do `horizon`."""
+    block = max(1, min(block, n))
+    rng = np.random.default_rng(seed)
+    n_blocks = int(np.ceil(horizon / block))
+    starts = rng.integers(0, n, size=(n_paths, n_blocks), dtype=np.int32)
+    idx = (starts[:, :, None] + np.arange(block, dtype=np.int32)[None, None, :]) % n
+    return idx.reshape(n_paths, -1)[:, :horizon]
+
+
 def block_bootstrap(returns: np.ndarray, horizon: int, n_paths: int, block: int = 20, seed: int = 42) -> np.ndarray:
     """Losuje z historii całe bloki kolejnych dni (z zawijaniem) i skleja je w ścieżki o długości `horizon`."""
     r = np.asarray(returns, dtype=float)
     r = r[np.isfinite(r)]
-    n = len(r)
-    if n == 0:
+    if len(r) == 0:
         return np.zeros((n_paths, horizon))
-    block = max(1, min(block, n))
-    rng = np.random.default_rng(seed)
-    n_blocks = int(np.ceil(horizon / block))
-    starts = rng.integers(0, n, size=(n_paths, n_blocks))
-    idx = (starts[:, :, None] + np.arange(block)[None, None, :]) % n
-    return r[idx.reshape(n_paths, -1)[:, :horizon]]
+    return r[bootstrap_index(len(r), horizon, n_paths, block, seed)]
 
 
 def student_t_paths(mu_daily: float, sigma_daily: float, df: float, horizon: int, n_paths: int, seed: int = 42) -> np.ndarray:
@@ -68,13 +72,22 @@ def simulate(returns: pd.Series | np.ndarray, start_value: float, years: int = 1
     sigma = float(r.std(ddof=1)) if len(r) > 1 else 0.0
     hist_mean = float(r.mean()) if len(r) else 0.0
     mu = target_daily_mean(annual_return, sigma) if annual_return is not None else hist_mean
-    if method == "t":
-        paths = student_t_paths(mu, sigma, fit_df(r), horizon, n_paths, seed)
-    else:
-        paths = block_bootstrap(r, horizon, n_paths, block, seed) + (mu - hist_mean)
-    paths = np.maximum(paths, -0.99)
-
     months = horizon // DAYS_PER_MONTH
+    # zwroty losujemy miesiąc po miesiącu - pełna macierz dni x ścieżki zajęłaby kilkadziesiąt MB
+    if method == "t" or len(r) == 0:
+        df = fit_df(r)
+        rng = np.random.default_rng(seed)
+        scale = sigma / np.sqrt(df / (df - 2.0))
+
+        def month_returns(m: int) -> np.ndarray:
+            return mu + scale * rng.standard_t(df, size=(n_paths, DAYS_PER_MONTH))
+    else:
+        idx = bootstrap_index(len(r), months * DAYS_PER_MONTH, n_paths, block, seed)
+        shift = mu - hist_mean
+
+        def month_returns(m: int) -> np.ndarray:
+            return r[idx[:, m * DAYS_PER_MONTH:(m + 1) * DAYS_PER_MONTH]] + shift
+
     values = np.empty((n_paths, months + 1))
     values[:, 0] = start_value
     v = np.full(n_paths, float(start_value))
@@ -82,18 +95,18 @@ def simulate(returns: pd.Series | np.ndarray, start_value: float, years: int = 1
     peak = np.ones(n_paths)
     max_dd = np.zeros(n_paths)
     dd_by_month = np.zeros((n_paths, months + 1))
-    for d in range(months * DAYS_PER_MONTH):
-        if d % DAYS_PER_MONTH == 0 and d > 0 and monthly_contribution:
+    for m in range(months):
+        if m > 0 and monthly_contribution:
             v = v + monthly_contribution
-        step = 1.0 + paths[:, d]
-        v = v * step
-        growth = growth * step
-        peak = np.maximum(peak, growth)
-        max_dd = np.minimum(max_dd, growth / peak - 1.0)
-        if (d + 1) % DAYS_PER_MONTH == 0:
-            m = (d + 1) // DAYS_PER_MONTH
-            values[:, m] = v
-            dd_by_month[:, m] = max_dd
+        chunk = np.maximum(month_returns(m), -0.99)
+        for d in range(DAYS_PER_MONTH):
+            step = 1.0 + chunk[:, d]
+            v = v * step
+            growth = growth * step
+            peak = np.maximum(peak, growth)
+            max_dd = np.minimum(max_dd, growth / peak - 1.0)
+        values[:, m + 1] = v
+        dd_by_month[:, m + 1] = max_dd
     contributed = start_value + monthly_contribution * np.maximum(np.arange(months + 1) - 1, 0)
     contributed[0] = start_value
     return {"values": values, "months": months, "contributed": contributed, "max_drawdown": max_dd,

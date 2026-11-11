@@ -228,3 +228,76 @@ def test_tax_screen_and_pdf_download(page, base_url):
         assert fh.read(5) == b"%PDF-"
     shot(page, "95-tax")
     assert not page.errors, page.errors
+
+
+def test_ai_screen_memo_and_chat(page, base_url, monkeypatch):
+    """Dział AI z podstawionym modelem: memo, podgląd wysyłanych danych, czat."""
+    from core import ai
+
+    class Resp:
+        status_code = 200
+
+        def __init__(self, text):
+            self._text = text
+
+        def json(self):
+            return {"content": [{"type": "text", "text": self._text}]}
+
+    def fake_post(url, headers, body, timeout):
+        if "memo" in body["messages"][-1]["content"]:
+            return Resp("## Stan portfela\nPortfel jest wart **151 tys. zł**.\n\n## Główne ryzyka\n- Koncentracja w CFD\n- Kurs USD/PLN")
+        return Resp("Najwięcej ryzyka dokłada pozycja CFD na S&P 500.")
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setattr(ai, "_post", fake_post)
+    page.reload()
+    wait_ready(page)
+    page.goto(base_url + "/#/more")
+    page.wait_for_selector(".menu")
+    assert page.locator(".menu button", has_text="Memo ryzyka").count() == 1
+    page.goto(base_url + "/#/ai/ai")
+    page.wait_for_selector(".btn >> text=Napisz memo ryzyka")
+    page.locator(".btn", has_text="Napisz memo ryzyka").tap()
+    page.wait_for_selector(".memo h3")
+    assert page.locator(".memo h3").all_inner_texts() == ["Stan portfela", "Główne ryzyka"]
+    assert page.locator(".memo strong").first.inner_text() == "151 tys. zł" and page.locator(".memo li").count() == 2
+    page.locator("details.section summary", has_text="Co dokładnie zostanie wysłane").tap()
+    page.wait_for_function("document.querySelector('pre.json').textContent.includes('var95_1d_pln')")
+    assert "Jan Przykładowy" not in page.inner_text("pre.json")
+    page.locator(".chat-form input").fill("Co najbardziej zwiększa moje ryzyko?")
+    page.locator(".chat-form .btn").tap()
+    page.wait_for_selector(".msg.assistant")
+    assert "CFD na S&P 500" in page.inner_text(".msg.assistant") and page.locator(".msg.user").count() == 1
+    shot(page, "96-ai")
+    assert not page.errors, page.errors
+
+
+def test_ai_hidden_without_key(page, base_url, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    page.reload()
+    wait_ready(page)
+    page.goto(base_url + "/#/more")
+    page.wait_for_selector(".menu")
+    assert page.locator(".menu button", has_text="Memo ryzyka").count() == 0
+
+
+def test_app_shell_opens_offline_from_service_worker(browser, base_url):
+    """Po pierwszej wizycie powłoka aplikacji otwiera się bez sieci (np. gdy darmowy serwer jeszcze śpi)."""
+    ctx = browser.new_context(viewport=VIEWPORT, is_mobile=True, has_touch=True, locale="pl-PL")
+    pg = ctx.new_page()
+    pg.goto(base_url + "/")
+    wait_ready(pg)
+    pg.wait_for_function("navigator.serviceWorker.controller !== null || navigator.serviceWorker.ready.then(() => true)", timeout=20000)
+    pg.evaluate("navigator.serviceWorker.ready")
+    pg.wait_for_timeout(800)                       # service worker kończy zapisywać pliki powłoki
+    manifest = pg.request.get(base_url + "/manifest.webmanifest")
+    assert manifest.ok and "manifest+json" in manifest.headers["content-type"] and manifest.json()["display"] == "standalone"
+    ctx.set_offline(True)
+    pg.reload()
+    pg.wait_for_selector(".boot-line", timeout=15000)
+    assert pg.locator("#bar-title").inner_text() == "XTB Analytics"            # powłoka z pamięci telefonu
+    pg.wait_for_function("document.querySelector('.boot-line').textContent.includes('Budzę serwer')", timeout=20000)
+    ctx.set_offline(False)
+    wait_ready(pg)                                                              # po powrocie sieci aplikacja rusza sama
+    assert "19 dni na 20" in pg.inner_text(".statement")
+    ctx.close()

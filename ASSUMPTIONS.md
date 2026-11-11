@@ -173,3 +173,21 @@ zmienić w kodzie; najważniejsze są też wystawione w UI (panel boczny, tabela
 - **Poza zakresem**: straty z lat ubiegłych, inne rachunki, pozycje przeniesione od innego brokera, konta
   IKE/IKZE, numery pól formularza (zmieniają się co roku).
 - **Wariant porównawczy** „Kwoty z raportu XTB” używa wartości PLN przeliczonych przez brokera.
+
+## Etap 7 - AI i wdrożenie
+
+- **AI**: wywołanie wprost do Messages API (`POST /v1/messages`, nagłówki `x-api-key` i `anthropic-version:
+  2023-06-01`) biblioteką `requests`, bez dodatkowego SDK. Model domyślny `claude-sonnet-5-5`, zmieniany zmienną
+  `ANTHROPIC_MODEL`. Wywołanie nie było wykonywane podczas budowy (brak sieci i klucza) - przetestowany jest
+  kształt zapytania, obsługa błędów i interfejs z podstawionym modelem.
+- **Co trafia do modelu**: tylko paczka z `server/ai_payload.py` - wartości zbiorcze portfela, wskaźniki, udziały
+  i nazwy kilku pozycji o największym wpływie. Bez imienia i nazwiska, numeru rachunku, transakcji i operacji
+  gotówkowych. Paczkę można podejrzeć w aplikacji przed wysłaniem. Kwoty w PLN są w niej zawarte, bo bez nich
+  memo ryzyka nie miałoby treści.
+- **Zasady dla modelu**: tylko liczby z paczki, żadnych rekomendacji kupna/sprzedaży, treść pól tekstowych
+  traktowana jako dane, a nie polecenia.
+- **Hosting**: Render, plan darmowy, region Frankfurt, jeden proces gunicorn z 4 wątkami (sesje w pamięci
+  wymagają jednego procesu). Cache notowań leży na dysku ulotnym - po uśpieniu instancji pobiera się od nowa.
+- **Pobieranie notowań** u dostawcy „na żywo” idzie w 4 wątkach naraz (zmienna `FETCH_WORKERS`), żeby pierwsze
+  przeliczenie po przebudzeniu serwera było krótsze.
+- **Monte Carlo** losuje zwroty miesiąc po miesiącu, żeby zmieścić się w 512 MB pamięci darmowej instancji.

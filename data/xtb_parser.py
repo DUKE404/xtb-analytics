@@ -571,6 +571,11 @@ def parse_export(files) -> XTBExport:
                         exp.closed["close_time"].max() if len(exp.closed) else None,
                         exp.open["open_time"].max() if len(exp.open) else None) if t is not None and not pd.isna(t)]
     last_event = max(last).normalize() if last else None
+    # data z nazwy arkusza/pliku liczy się tylko, gdy jest tuż po ostatnim zdarzeniu (inaczej to np. numer rachunku
+    # albo początek zakresu dat w nazwie pliku)
+    if name_date is not None and last_event is not None and not (
+            last_event <= name_date <= last_event + pd.Timedelta(days=10)):
+        name_date = None
     exp.as_of = max([d for d in (name_date, last_event) if d is not None]) if (name_date or last_event) else None
     exp.notes = seen + exp.notes
     return exp
