@@ -9,7 +9,7 @@ from server.app import create_app
 from server.screens import NAV, SCREENS
 from server.sessions import SessionStore
 
-CHART_TYPES = {"line", "hbar", "bars", "heatmap", "hist", "fan", "calendar"}
+CHART_TYPES = {"line", "hbar", "bars", "heatmap", "hist", "fan"}
 FMTS = {"zl", "pln", "pct", "num", "int", "days", "x", "text"}
 
 
@@ -60,11 +60,6 @@ def check_chart(c):
         assert len(c["median"]) == len(c["x"])
         for b in c["bands"]:
             assert len(b["lo"]) == len(c["x"]) == len(b["hi"])
-    elif c["type"] == "calendar":
-        assert c["months"]
-        for m in c["months"]:
-            assert 0 <= m["lead"] <= 6 and 28 <= len(m["days"]) <= 31 and 1 <= m["month"] <= 12
-            assert all(d is None or "v" in d or "mark" in d for d in m["days"])
 
 
 def check_blocks(blocks, counts):

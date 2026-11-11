@@ -288,18 +288,3 @@ wyceniony jak akcja lub po złym poziomie cen. Pliku nie widziałem, dlatego pop
 - **Limity**: progi domyślne (pozycja 15%, sektor 35%, top 5 60%, brutto 150%, VaR 95% 1d 3%, obsunięcie 20%,
   gotówka min 2%) to typowe ograniczenia portfela akcyjnego przyjęte jako punkt startu; „blisko” = od 80% progu.
 - **Epizody obsunięć**: od szczytu do pierwszego dnia z nowym szczytem; długości w dniach kalendarzowych.
-
-## Kalendarz: stopy dzienne i terminy wyników
-
-- **Kolor dnia**: intensywność = |stopa| / 95. percentyl |stóp dziennych| w okresie (ucięte na 1), żeby jeden
-  skrajny dzień nie wygaszał pozostałych. Pierwszy dzień okresu nie ma stopy (to kapitał startowy).
-- **Seria**: kolejne sesje z wynikiem tego samego znaku; sesje z wynikiem równym zero są pomijane (nie przerywają serii).
-- **Stopa pozycji w sesji** = wynik pozycji tego dnia / |ekspozycja| z poprzedniej sesji (dla CFD nominał).
-- **Kwartał raportu**: ostatni koniec kwartału obrotowego co najmniej 10 dni przed datą publikacji; kwartały
-  liczone od miesiąca końca roku obrotowego (z `nextFiscalYearEnd` / `lastFiscalYearEnd` w Yahoo, domyślnie
-  grudzień). Q4 = wyniki roczne. Rok obrotowy nazywany rokiem, w którym się kończy (np. Oracle: Q2 2027 r. obr.).
-- **Data szacunkowa**: gdy Yahoo oznacza datę jako szacunkową albo podaje przedział dwóch dat.
-- **Dziś** dla terminów to bieżąca data (w trybie demo: data danych przykładowych). Spółki: akcje i CFD na akcje
-  z bieżącego składu, jedna na ticker Yahoo; ETF-y i CFD na indeksy pominięte. Cache 12 h.
-- **Heatmapy miesięczne** przeszły na zielony/czerwony; heatmapa korelacji zostaje niebiesko-czerwona,
-  bo tam kolor nie oznacza zysku ani straty.

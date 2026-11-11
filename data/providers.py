@@ -289,83 +289,6 @@ def fetch_fundamentals(ticker: str) -> dict:
     }
 
 
-def _ts(v):
-    """Data z yfinance (date, datetime, Timestamp albo sekundy epoki) -> 'RRRR-MM-DD' lub None."""
-    if v is None:
-        return None
-    try:
-        if isinstance(v, (int, float)) and not isinstance(v, bool):
-            if v != v or v <= 0:
-                return None
-            return pd.Timestamp(int(v), unit="s").strftime("%Y-%m-%d")
-        t = pd.Timestamp(v)
-        return None if pd.isna(t) else t.strftime("%Y-%m-%d")
-    except (TypeError, ValueError, OverflowError):
-        return None
-
-
-def _f(v):
-    try:
-        v = float(v)
-    except (TypeError, ValueError):
-        return None
-    return v if v == v else None
-
-
-def parse_events(ticker: str, cal, info: dict | None, history=None) -> dict:
-    """Terminy i oczekiwania z yfinance: Ticker.calendar (słownik), Ticker.info, Ticker.earnings_history."""
-    cal = cal if isinstance(cal, dict) else {}
-    info = info or {}
-    dates = cal.get("Earnings Date") or []
-    dates = [dates] if not isinstance(dates, (list, tuple)) else list(dates)
-    dates = [x for x in (_ts(d) for d in dates) if x]
-    if not dates:
-        dates = [x for x in (_ts(info.get(k)) for k in ("earningsTimestampStart", "earningsTimestamp")) if x][:1]
-    fy = _ts(info.get("nextFiscalYearEnd")) or _ts(info.get("lastFiscalYearEnd"))
-    last = {}
-    if history is not None and hasattr(history, "iterrows") and len(history):
-        h = history.copy()
-        try:
-            h.index = pd.to_datetime(h.index)
-            h = h.sort_index()
-        except (TypeError, ValueError):
-            pass
-        row = h.iloc[-1]
-        last = {"last_quarter_end": _ts(h.index[-1]), "last_eps_actual": _f(row.get("epsActual")),
-                "last_eps_estimate": _f(row.get("epsEstimate")), "last_surprise": _f(row.get("surprisePercent"))}
-    return {
-        "ticker": ticker, "earnings": sorted(set(dates)),
-        "estimated": bool(info.get("isEarningsDateEstimate", len(dates) > 1)),
-        "eps_avg": _f(cal.get("Earnings Average")), "eps_low": _f(cal.get("Earnings Low")), "eps_high": _f(cal.get("Earnings High")),
-        "rev_avg": _f(cal.get("Revenue Average")), "rev_low": _f(cal.get("Revenue Low")), "rev_high": _f(cal.get("Revenue High")),
-        "ex_dividend": _ts(cal.get("Ex-Dividend Date")) or _ts(info.get("exDividendDate")),
-        "dividend_date": _ts(cal.get("Dividend Date")) or _ts(info.get("dividendDate")),
-        "dividend_rate": _f(info.get("dividendRate")),
-        "fy_end_month": int(fy[5:7]) if fy else None, "currency": info.get("currency"),
-        **{k: None for k in ("last_quarter_end", "last_eps_actual", "last_eps_estimate", "last_surprise")}, **last,
-        "source": "Yahoo Finance", "fetched": pd.Timestamp.now().strftime("%Y-%m-%d"),
-    }
-
-
-def fetch_events(ticker: str) -> dict:
-    try:
-        import yfinance as yf
-    except ImportError as exc:  # pragma: no cover
-        raise DataUnavailable("biblioteka yfinance nie jest zainstalowana") from exc
-    t = yf.Ticker(ticker)
-
-    def safe(fn):
-        try:
-            return fn()
-        except Exception:
-            return None
-
-    cal, info = safe(lambda: t.calendar), safe(lambda: dict(t.info))
-    if not cal and not info:
-        raise DataUnavailable(f"yfinance: brak kalendarza dla {ticker}")
-    return parse_events(ticker, cal, info, safe(lambda: t.earnings_history))
-
-
 class LiveMarketData:
     name = "na żywo (yfinance → Stooq, NBP)"
     is_synthetic = False
@@ -398,25 +321,6 @@ class LiveMarketData:
         if factor != 1.0:
             df = df.assign(close=df["close"] * factor)
         return df
-
-    def events(self, row, today=None) -> dict:
-        """Terminy wyników i dywidend (cache 12 h)."""
-        ticker = next((x.strip() for x in str(row.get("yf_ticker") or "").split("|") if x.strip()), "")
-        if not ticker:
-            raise DataUnavailable("brak tickera Yahoo w tabeli mapowań")
-        key = f"events:{ticker}"
-        hit = self.cache.get_kv(key, max_age_hours=12.0)
-        if hit:
-            return json.loads(hit)
-        try:
-            data = fetch_events(ticker)
-        except DataUnavailable:
-            old = self.cache.get_kv(key)
-            if old:
-                return json.loads(old)
-            raise
-        self.cache.set_kv(key, json.dumps(data))
-        return data
 
     def fundamentals(self, row) -> dict:
         """Dane o spółce (cache 24 h)."""

@@ -45,11 +45,9 @@ class Params:
         return str(v).lower() in ("1", "true", "tak", "on", "yes")
 
 
-from server.screens import calendar, companies, fund, overview, performance, risk, sim, tax, trader  # noqa: E402
+from server.screens import companies, fund, overview, performance, risk, sim, tax, trader  # noqa: E402
 
 SCREENS = {
-    "calendar-days": calendar.days,
-    "calendar-events": calendar.events,
     "companies": companies.companies,
     "fund-tearsheet": fund.tearsheet,
     "fund-longshort": fund.longshort,
@@ -92,8 +90,6 @@ NAV = [
         {"id": "sim-whatif", "label": "Co jeśli"}, {"id": "sim-optimize", "label": "Optymalizacja"}]},
 ]
 MORE = [
-    {"id": "calendar", "label": "Kalendarz", "hint": "Stopy dzienne w kolorach, terminy wyników kwartalnych i rocznych, dywidendy",
-     "screens": [{"id": "calendar-days", "label": "Stopy dzienne"}, {"id": "calendar-events", "label": "Wyniki spółek"}]},
     {"id": "fund", "label": "Fundusz", "hint": "Tearsheet, ekspozycja long/short i beta, zabezpieczenie, limity ryzyka", "screens": [
         {"id": "fund-tearsheet", "label": "Tearsheet"}, {"id": "fund-longshort", "label": "Long / short"},
         {"id": "fund-limits", "label": "Limity"}]},

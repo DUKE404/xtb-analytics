@@ -186,10 +186,9 @@ def chart(spec: dict, title: str | None = None, caption: str | None = None) -> d
 
 def table(df: pd.DataFrame, columns: list[tuple], title: str | None = None, caption: str | None = None,
           limit: int = 12) -> dict:
-    """columns: (kolumna w df, nagłówek, fmt[, cyfry[, ze znakiem]]). Pierwsza kolumna jest przypięta przy przewijaniu.
-    `ze znakiem`: liczba jest wynikiem - plus na zielono z „+”, minus na czerwono."""
+    """columns: (kolumna w df, nagłówek, fmt[, cyfry]). Pierwsza kolumna jest przypięta przy przewijaniu."""
     cols = [{"key": c[0], "label": c[1], "fmt": c[2] if len(c) > 2 else "text",
-             "digits": c[3] if len(c) > 3 else None, "signed": bool(c[4]) if len(c) > 4 else False} for c in columns]
+             "digits": c[3] if len(c) > 3 else None} for c in columns]
     rows = df[[c["key"] for c in cols]].to_dict("records") if len(df) else []
     return {"kind": "table", "title": title, "caption": caption, "columns": cols, "rows": rows, "limit": limit}
 
@@ -238,22 +237,10 @@ def bars(df: pd.DataFrame, fmt: str = "pct", digits: int | None = None, colors: 
 
 
 def heatmap(df: pd.DataFrame, fmt: str = "num", digits: int | None = None, diverging: bool = True,
-            labels: bool = False, pnl: bool = False) -> dict:
-    """`pnl`: zielony = zysk, czerwony = strata (zamiast niebiesko-czerwonej skali dla korelacji)."""
+            labels: bool = False) -> dict:
     return {"type": "heatmap", "rows": [str(i) for i in df.index], "cols": [str(c) for c in df.columns],
             "z": [_round(r) for r in df.values], "fmt": fmt, "digits": digits, "diverging": diverging,
-            "labels": labels, "pnl": pnl}
-
-
-def calendar(months: list[dict], fmt: str = "pct", digits: int = 1, scale: float | None = None,
-             bench_name: str | None = None, hint: str | None = None) -> dict:
-    """Miesiące z dniami (core.calendar.month_grid). Dzień: {"v": stopa, "pnl": kwota, "b": benchmark, "mark": tekst}."""
-    def clean(d):
-        if d is None:
-            return None
-        return {k: (_round([v])[0] if isinstance(v, float) else v) for k, v in d.items() if v is not None}
-    return {"type": "calendar", "fmt": fmt, "digits": digits, "scale": scale, "bench_name": bench_name, "hint": hint,
-            "months": [{**{k: v for k, v in m.items() if k != "days"}, "days": [clean(d) for d in m["days"]]} for m in months]}
+            "labels": labels}
 
 
 def hist(values, bins: int = 40, fmt: str = "pln", digits: int | None = None, markers: list | None = None) -> dict:

@@ -229,7 +229,6 @@ function mix(a, b, t) {
   return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(",")})`;
 }
 const C_NEG = [230, 103, 103], C_POS = [57, 135, 229], C_MID = [43, 55, 66], C_LOW = [16, 66, 129], C_HIGH = [205, 226, 251];
-const C_GAIN = [47, 179, 127], C_LOSS = [239, 106, 106];   // --pos / --neg: wynik (zysk / strata)
 
 function heatmapChart(spec) {
   const wrap = el("div");
@@ -241,8 +240,7 @@ function heatmapChart(spec) {
   const maxAbs = Math.max(...flat.map(Math.abs), 1e-12), lo = Math.min(...flat), hi = Math.max(...flat);
   const fill = (v) => {
     if (!isNum(v)) return "transparent";
-    const [up, down] = spec.pnl ? [C_GAIN, C_LOSS] : [C_POS, C_NEG];
-    if (spec.diverging) return v >= 0 ? mix(C_MID, up, Math.min(1, v / maxAbs)) : mix(C_MID, down, Math.min(1, -v / maxAbs));
+    if (spec.diverging) return v >= 0 ? mix(C_MID, C_POS, Math.min(1, v / maxAbs)) : mix(C_MID, C_NEG, Math.min(1, -v / maxAbs));
     return mix(C_LOW, C_HIGH, hi > lo ? (v - lo) / (hi - lo) : 0.5);
   };
   responsive(body, (W) => {
@@ -390,51 +388,7 @@ function fanChart(spec) {
   return wrap;
 }
 
-const WD_SHORT = ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"];
-const WD_LONG = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"];
-
-/** Kalendarz miesięcy: każdy dzień sesyjny to pole w kolorze wyniku (zielony zysk, czerwony strata),
- *  intensywność rośnie z wielkością ruchu. Dni z wydarzeniem (`mark`) mają mosiężną kropkę. */
-function calendarChart(spec) {
-  const hint = spec.hint || "Dotknij dnia, żeby zobaczyć szczegóły";
-  const readout = el("p", { class: "readout" }, hint);
-  const months = el("div", { class: "cal-months" });
-  const scale = spec.scale > 0 ? spec.scale : 0.01;
-  const pct = (v) => Math.round(16 + 70 * Math.min(1, Math.abs(v) / scale));
-  let active = null;
-  for (const m of spec.months) {
-    const total = isNum(m.total) ? el("span", { class: "cal-total" + (m.total < 0 ? " neg" : m.total > 0 ? " pos" : "") },
-      fmt(m.total, spec.fmt, spec.digits, true)) : null;
-    const sub = isNum(m.pnl_total) ? el("span", { class: "cal-sub" }, fmt(m.pnl_total, "pln", 0, true)) : null;
-    const cells = el("div", { class: "cal-grid" }, ...WD_SHORT.map((w, i) => el("span", { class: "cal-wd" + (i >= 5 ? " we" : "") }, w)));
-    for (let i = 0; i < m.lead; i++) cells.append(el("span", { class: "cal-pad" }));
-    m.days.forEach((d, i) => {
-      const day = i + 1, wd = (m.lead + i) % 7;
-      if (!d) { cells.append(el("span", { class: "cal-day off" + (wd >= 5 ? " we" : "") }, el("i", {}, String(day)))); return; }
-      const v = d.v;
-      const bg = isNum(v) && v !== 0 ? `background:color-mix(in srgb, var(${v > 0 ? "--pos" : "--neg"}) ${pct(v)}%, var(--raised))` : null;
-      const b = el("button", { type: "button", class: "cal-day" + (d.mark ? " mark" : "") + (isNum(v) ? "" : " event"), style: bg },
-        el("i", {}, String(day)), isNum(v) ? el("small", {}, fmt(v, spec.fmt, spec.digits, true).replace("%", "")) : null);
-      b.addEventListener("click", () => {
-        if (active) active.classList.remove("on");
-        active = b; b.classList.add("on");
-        const date = `${String(day).padStart(2, "0")}.${String(m.month).padStart(2, "0")}.${m.year}`;
-        const parts = [`${WD_LONG[wd]} ${date}: `];
-        if (isNum(v)) parts.push(el("b", {}, fmt(v, spec.fmt, 2, true)));
-        if (isNum(d.pnl)) parts.push(` · ${fmt(d.pnl, "pln", 0, true)}`);
-        if (isNum(d.b) && spec.bench_name) parts.push(` · ${spec.bench_name} ${fmt(d.b, "pct", 2, true)}`);
-        if (d.mark) parts.push(el("b", {}, d.mark));
-        readout.replaceChildren(...parts);
-      });
-      cells.append(b);
-    });
-    months.append(el("section", { class: "cal-month" }, el("header", { class: "cal-head" }, el("span", { class: "cal-title" }, m.label), sub, total), cells));
-  }
-  return el("div", { class: "cal" }, readout, months);
-}
-
-const RENDERERS = { line: lineChart, hbar: hbarChart, bars: barsChart, heatmap: heatmapChart, hist: histChart, fan: fanChart,
-  calendar: calendarChart };
+const RENDERERS = { line: lineChart, hbar: hbarChart, bars: barsChart, heatmap: heatmapChart, hist: histChart, fan: fanChart };
 
 export function renderChart(spec) {
   const fn = RENDERERS[spec.type];

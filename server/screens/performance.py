@@ -116,8 +116,8 @@ def periods(ctx, p) -> dict:
     best, worst = (m.idxmax(), m.max()), (m.idxmin(), m.min())
     name = lambda ym: f"{perf.MONTHS_PL[ym[1] - 1]} {ym[0]}"  # noqa: E731
     blocks = [
-        B.chart(B.heatmap(months, "pct", 1, diverging=True, pnl=True), "Zwroty miesięczne",
-                "Zielony to zysk, czerwony strata. Im mocniejszy kolor, tym większy ruch. Stopy dzienne: Więcej → Kalendarz."),
+        B.chart(B.heatmap(months, "pct", 1, diverging=True), "Zwroty miesięczne",
+                "Niebieski to zysk, czerwony strata. Im mocniejszy kolor, tym większy ruch."),
         B.metrics([
             B.metric("Najlepszy miesiąc", best[1], "pct", note=name(best[0]), tip="Najwyższa miesięczna stopa zwrotu portfela."),
             B.metric("Najgorszy miesiąc", worst[1], "pct", note=name(worst[0]), tip="Najniższa miesięczna stopa zwrotu portfela."),

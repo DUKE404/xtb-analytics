@@ -192,29 +192,6 @@ class SyntheticMarketData:
         s, cur = self.market.benchmark(key)
         return s.loc[pd.Timestamp(start):pd.Timestamp(end)], cur
 
-    def events(self, row, today=None) -> dict:
-        """Zmyślone, ale spójne terminy wyników i dywidend (tryb demo)."""
-        import zlib
-        seed = zlib.crc32(("ev" + str(row["symbol"])).encode())
-        rng = np.random.default_rng(seed)
-        today = pd.Timestamp(today or self.market.dates[-1]).normalize()
-        nxt = today + pd.Timedelta(days=int(seed % 80) + 1)
-        while nxt.weekday() >= 5:
-            nxt += pd.Timedelta(days=1)
-        fy = [12, 12, 12, 9, 6, 1][seed % 6]
-        eps = float(rng.uniform(0.5, 6.0))
-        last_end = (nxt - pd.Timedelta(days=95)).to_period("M").end_time.normalize()
-        ex = today + pd.Timedelta(days=int(seed % 50) + 3) if seed % 3 == 0 else None
-        return {"ticker": row.get("yf_ticker") or row["symbol"], "earnings": [nxt.strftime("%Y-%m-%d")],
-                "estimated": bool(seed % 4 == 0), "eps_avg": eps, "eps_low": eps * 0.9, "eps_high": eps * 1.1,
-                "rev_avg": float(rng.uniform(2, 90)) * 1e9, "rev_low": None, "rev_high": None,
-                "ex_dividend": ex.strftime("%Y-%m-%d") if ex is not None else None, "dividend_date": None,
-                "dividend_rate": float(rng.uniform(0.5, 4.0)) if ex is not None else None, "fy_end_month": fy,
-                "currency": row.get("currency", "USD"), "last_quarter_end": last_end.strftime("%Y-%m-%d"),
-                "last_eps_actual": eps * 0.97, "last_eps_estimate": eps * 0.95 * (1 + float(rng.normal(0, 0.05))),
-                "last_surprise": float(rng.normal(0.03, 0.06)), "source": "dane syntetyczne (demo)",
-                "fetched": str(today.date())}
-
     def fundamentals(self, row) -> dict:
         """Zmyślone, ale spójne dane o spółce - żeby moduł działał w trybie demo bez sieci."""
         import zlib

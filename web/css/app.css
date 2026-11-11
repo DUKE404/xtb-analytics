@@ -90,33 +90,6 @@ button { background: none; border: 0; padding: 0; cursor: pointer; text-align: i
 }
 .subnav button[aria-current="page"] { color: var(--ink); border-bottom-color: var(--brass); font-weight: 600; }
 
-/* ---------- kalendarz dni ---------- */
-.cal-months { display: grid; gap: 26px; margin-top: 10px; }
-.cal-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
-.cal-title { font: 600 15px/1.2 var(--serif); text-transform: capitalize; flex: 1; }
-.cal-total { font-weight: 600; font-variant-numeric: tabular-nums; }
-.cal-total.pos { color: var(--pos); } .cal-total.neg { color: var(--neg); }
-.cal-sub { font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
-.cal-wd { font-size: 11px; color: var(--ink-3); text-align: center; padding-bottom: 2px; }
-.cal-wd.we { opacity: .55; }
-.cal-day {
-  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
-  aspect-ratio: 1 / 0.92; min-width: 0; border-radius: 7px; background: var(--raised); color: var(--ink);
-  font-variant-numeric: tabular-nums; overflow: hidden;
-}
-.cal-day i { font-style: normal; font-size: 11px; line-height: 1; opacity: .78; }
-.cal-day small { font-size: 10.5px; font-weight: 600; line-height: 1.1; letter-spacing: -0.01em; white-space: nowrap; }
-.cal-day.off { background: transparent; color: var(--ink-3); opacity: .5; }
-.cal-day.off.we { opacity: .28; }
-.cal-day.event { background: var(--panel); box-shadow: inset 0 0 0 1px var(--line-strong); }
-.cal-day.mark::after { content: ""; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--brass); }
-.cal-day.mark.event { box-shadow: inset 0 0 0 1.5px var(--brass); }
-.cal-day.on { outline: 2px solid var(--ink); outline-offset: 1px; }
-.cal-pad { display: block; }
-@media (max-width: 360px) { .cal-day small { font-size: 9px; } }
-td.pos { color: var(--pos); }
-
 /* ---------- pasek okresu analizy ---------- */
 .viewbar {
   display: flex; align-items: center; gap: 6px; padding: 10px var(--gutter) 2px; overflow-x: auto; scrollbar-width: none;
@@ -401,7 +374,6 @@ pre.json { margin: 0; padding: 12px; background: var(--panel); border-radius: 8p
   main .screen > :not(figure.chart) + figure.chart:last-child,
   main .screen > figure.chart:first-child:has(+ :not(figure.chart)) { grid-column: 1 / -1; }
   .chart-body { margin: 8px 0 0; }
-  .cal-months { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 28px 34px; }
   main .screen > .controls, main .screen > .control { max-width: 760px; }
   main .screen > .controls:not(.grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; align-items: end; }
   main .screen > p.note, main .screen > .caption { max-width: 960px; }
