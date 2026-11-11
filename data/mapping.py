@@ -228,26 +228,37 @@ def normalize_mapping(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def apply_hints(row: dict, hint: dict | None) -> dict:
-    """Uzupełnia wiersz mapowania tym, co raport XTB sam podaje o instrumencie (nazwa, kategoria, waluta)."""
+    """Uzupełnia wiersz mapowania tym, co raport XTB sam podaje o instrumencie (nazwa, kategoria, waluta, mnożnik)."""
     if not hint:
         return row
     base = re.sub(r"_\d$", "", row["symbol"])
-    if hint.get("name") and row["name"] in (row["symbol"], base):
-        row["name"] = str(hint["name"])
+    if hint.get("name") and row["name"] in (row["symbol"], base, f"CFD {base}"):
+        row["name"] = ("CFD " if row["symbol"].endswith("_4") else "") + str(hint["name"])
+    cat = str(hint.get("category", "")).upper()
+    is_cfd_hint = bool(cat) and cat not in ("STOCK", "STOCKS", "AKCJE", "ETF", "ETFS") and "ETF" not in cat
+    if is_cfd_hint or row["asset_class"] == C:
+        # mnożnik i depozyt wyliczone z zamkniętych pozycji w raporcie są pewniejsze niż wbudowana tabela
+        if hint.get("multiplier"):
+            row["multiplier"] = float(hint["multiplier"])
+        if hint.get("margin_rate"):
+            row["margin_rate"] = float(hint["margin_rate"])
+        if is_cfd_hint and row["asset_class"] != C:
+            row["asset_class"] = C
+            row["spread_bps"] = DEFAULT_SPREAD_BPS.get("CFD_INDEX", row["spread_bps"])
+        if row["margin_rate"] >= 1.0:
+            row["margin_rate"] = 0.20
+        if hint.get("currency") and base not in CFD_KNOWN:
+            row["currency"] = hint["currency"]
+        return row
     if base in KNOWN or base in CFD_KNOWN:
         return row                                  # wbudowana wiedza o instrumencie ma pierwszeństwo
-    cat = str(hint.get("category", "")).upper()
     if cat in ("STOCK", "ETF"):
         row["asset_class"] = cat
         if cat == "ETF":
             row["spread_bps"] = DEFAULT_SPREAD_BPS["ETF"]
             if row["sector"] == "Nieznany":
                 row["sector"] = "ETF"
-    elif cat:
-        row["asset_class"] = C
-        if row["margin_rate"] >= 1.0:
-            row["margin_rate"] = 0.20
-    if hint.get("currency") and row["asset_class"] != C:
+    if hint.get("currency"):
         # wartości w raporcie zgadzają się 1:1 z ceną x ilość, więc instrument jest notowany w walucie rachunku
         if row["currency"] != hint["currency"]:
             row["currency"] = hint["currency"]

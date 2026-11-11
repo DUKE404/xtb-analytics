@@ -228,8 +228,15 @@ tests/    pytest: silnik, API, interfejs w przeglądarce (Playwright)
 - Przy rachunkach z różnymi datami raportu portfel jest liczony na datę najnowszego.
 - Mnożniki i stawki depozytu CFD pochodzą z tabeli wbudowanej w aplikację - sprawdź je dla swoich instrumentów
   w zakładce Tickery.
-- Ceny są korygowane o splity przez źródło danych, ilości w eksporcie nie - split w trakcie trzymania pozycji może
-  zniekształcić wycenę historyczną.
+- **Skala notowań**: gdy poziom notowań nie pasuje do cen transakcji z raportu (split, pensy zamiast funtów,
+  inny kontrakt, zły ticker), pozycja jest wyceniana notowaniami przeskalowanymi do cen otwarcia i zamknięcia
+  z raportu, a aplikacja to zgłasza w „Uwagach do danych”. Wynik całkowity jest wtedy poprawny, przebieg dzienny
+  przybliżony.
+- **CFD** rozpoznaję po kolumnie Category (wszystko poza STOCK i ETF). Mnożnik i stawkę depozytu czytam
+  z zamkniętych pozycji w raporcie; wbudowana tabela jest tylko zapasem. CFD na akcję dostaje symbol z końcówką
+  `_4`, żeby nie mieszał się z prawdziwą akcją o tym samym tickerze.
+- Dni, w których wartość portfela wychodzi ujemna (błąd danych), są pomijane w stopach zwrotu i zgłaszane
+  z nazwą pozycji, która to powoduje.
 - Dni wolne na jednej giełdzie przy otwartej drugiej są wypełniane ostatnim zamknięciem.
 - WIG zawiera dywidendy, WIG20 i S&P 500 nie - porównanie z nimi jest dla portfela lekko korzystne.
 

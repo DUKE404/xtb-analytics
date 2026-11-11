@@ -228,3 +228,23 @@ założony w etapie 1, rachunek był w USD, a użytkownik ma też drugi rachunek
 - **Kontrola wyceny**: ostrzeżenie, gdy ostatnia cena z notowań różni się o ponad 8% od „Current price” z raportu.
 - **Domyślna waluta wyświetlania to PLN** także dla samego rachunku USD (polski podatnik, podatki w złotych).
 - **Czas UTC** z eksportu traktuję jak czas lokalny przy przypisaniu do dnia.
+
+### Poprawka po pierwszym wczytaniu prawdziwych danych (TWR −100%, wartość portfela chwilowo ujemna)
+
+Na prawdziwych danych krzywa kapitału zeszła na kilka dni poniżej zera, co wyzerowało TWR na zawsze. Samymi
+akcjami nie da się zejść poniżej zera (gotówka + wartość ≥ 0), więc źródłem musi być pozycja krótka albo CFD
+wyceniony jak akcja lub po złym poziomie cen. Pliku nie widziałem, dlatego poprawka obejmuje całą klasę błędów:
+
+- **CFD po kategorii**: każda kategoria inna niż STOCK/ETF to CFD (wartość = wynik, nie cena × ilość). Wcześniej
+  CFD na akcję o tickerze znanej spółki był liczony jak akcja - krótka pozycja dawała wtedy ujemną „wartość”.
+- **CFD na akcję** dostaje symbol `TICKER_4`; operacje gotówkowe są przypisywane po kategorii wiersza.
+- **Mnożnik CFD z raportu**: wynik / (kierunek × wolumen × zmiana ceny × kurs przeliczenia), mediana po zamkniętych
+  pozycjach, zaokrąglona do typowych wartości. Depozyt: Margin / nominał.
+- **Kotwiczenie wyceny**: ceny transakcji z raportu są pewne, notowania dają kształt ścieżki. Gdy notowania
+  w dniu otwarcia lub zamknięcia odbiegają od ceny transakcji o więcej niż 25% (akcje) albo 2% (CFD), pozycja
+  jest wyceniana notowaniami przeskalowanymi (interpolacja logarytmiczna współczynnika między oboma końcami).
+  Dla otwartych pozycji końcem jest „Current price” z raportu.
+- **Ujemna wartość portfela** to błąd danych: taki dzień i dzień powrotu mają stopę zwrotu 0, a ostrzeżenie
+  podaje daty i pozycję o największym ujemnym wkładzie.
+- **Powłoka aplikacji** ładuje się najpierw z sieci (2,5 s na odpowiedź), dopiero potem z pamięci telefonu -
+  po wdrożeniu nowa wersja jest od razu, bez dwukrotnego otwierania.

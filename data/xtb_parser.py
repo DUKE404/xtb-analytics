@@ -139,6 +139,7 @@ CLOSED_COLS = {
     "name": ["instrument", "instrument position", "nazwa", "nazwa instrumentu"],
     "category": ["category", "kategoria"],
     "open_rate": ["open conversion rate", "kurs przeliczenia otwarcia"],
+    "close_rate": ["close conversion rate", "kurs przeliczenia zamkniecia"],
 }
 CLOSED_REQUIRED = ["symbol", "type", "volume", "open_time", "open_price", "close_time", "close_price"]
 
@@ -157,6 +158,7 @@ CASH_COLS = {
     "comment": ["comment", "komentarz", "opis"],
     "symbol": ["ticker", "symbol", "instrument"],
     "amount": ["amount", "kwota", "wartosc"],
+    "category": ["category", "kategoria"],
 }
 CASH_REQUIRED = ["type", "time", "amount"]
 
@@ -467,9 +469,86 @@ def _pos_id(v) -> str:
 
 
 CATEGORY_CLASS = {"STOCK": "STOCK", "STOCKS": "STOCK", "AKCJE": "STOCK", "ETF": "ETF", "ETFS": "ETF"}
+_STOCK_TICKER = re.compile(r"[A-Z0-9\-]+\.[A-Z]{2}")
+_NICE_MULTIPLIERS = [0.01, 0.1, 1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2500, 5000, 10000, 25000, 100000]
 
 
-def _instrument_info(df: pd.DataFrame, found: dict, out: pd.DataFrame, kind: str) -> dict:
+def category_class(cat) -> str:
+    """Kategoria z raportu -> STOCK / ETF / CFD ("" gdy raport jej nie podaje).
+
+    Wszystko, co nie jest akcją ani ETF-em (CFD, indeksy, surowce, waluty, krypto), to instrument z depozytem:
+    jego wartością jest wynik, a nie cena razy ilość.
+    """
+    c = norm(cat) if isinstance(cat, str) else ""
+    if not c:
+        return ""
+    if "cfd" in c:
+        return "CFD"
+    if "etf" in c:
+        return "ETF"
+    if any(k in c for k in ("stock", "akcj", "share", "equit")):
+        return "STOCK"
+    return "CFD"
+
+
+def cfd_symbol(symbol: str) -> str:
+    """CFD na akcję ma w nowym raporcie ten sam ticker co akcja - odróżniamy go sufiksem _4 (jak w starych raportach)."""
+    return symbol + "_4" if _STOCK_TICKER.fullmatch(symbol) else symbol
+
+
+def _row_categories(df: pd.DataFrame, found: dict, out: pd.DataFrame, kind: str) -> pd.Series:
+    """Kategoria każdego wiersza. W otwartych pozycjach stoi tylko w wierszu zbiorczym instrumentu nad pozycjami."""
+    if "category" not in found:
+        return pd.Series("", index=df.index)
+    cat = df[found["category"]].map(lambda v: v.strip().upper() if isinstance(v, str) else "")
+    if kind == "open":
+        cur_sym, cur_cat, filled = None, "", []
+        for s, c in zip(out["symbol"], cat):
+            if c:
+                cur_sym, cur_cat = s, c
+            filled.append(c or (cur_cat if s == cur_sym else ""))
+        cat = pd.Series(filled, index=df.index)
+    return cat
+
+
+def _nice(x: float) -> float:
+    for m in _NICE_MULTIPLIERS:
+        if abs(x / m - 1.0) < 0.03:
+            return float(m)
+    return float(f"{x:.4g}")
+
+
+def _cfd_terms(df: pd.DataFrame, found: dict, out: pd.DataFrame, is_cfd: pd.Series, info: dict) -> None:
+    """Mnożnik i stawka depozytu CFD wyliczone z arytmetyki samego raportu.
+
+    wynik = kierunek x wolumen x mnożnik x (cena zamknięcia - cena otwarcia) x kurs przeliczenia na walutę rachunku,
+    więc mnożnik da się odczytać z każdej zamkniętej pozycji, bez tabeli specyfikacji instrumentów.
+    """
+    rate = _num(df, found, "close_rate", np.nan) if "close_rate" in found else pd.Series(np.nan, index=df.index)
+    rate_open = _num(df, found, "open_rate", np.nan) if "open_rate" in found else rate
+    sgn = out["type"].map({"BUY": 1.0, "SELL": -1.0})
+    move = sgn * out["volume"] * (out["close_price"] - out["open_price"]) * rate
+    with np.errstate(divide="ignore", invalid="ignore"):
+        mult = (out["gross_pl"] / move).where(is_cfd & (move.abs() > 1e-9) & (out["gross_pl"].abs() > 0.02))
+    for sym in out.loc[is_cfd, "symbol"].unique():
+        rows = out["symbol"] == sym
+        m = mult[rows].replace([np.inf, -np.inf], np.nan).dropna()
+        m = m[m > 0]
+        d = info.setdefault(sym, {})
+        if len(m):
+            d["multiplier"] = _nice(float(m.median()))
+            with np.errstate(divide="ignore", invalid="ignore"):
+                mr = (out["margin"] / (out["volume"] * out["open_price"] * d["multiplier"] * rate_open))[rows]
+            mr = mr.replace([np.inf, -np.inf], np.nan).dropna()
+            mr = mr[(mr > 0.001) & (mr <= 1.0)]
+            if len(mr):
+                d["margin_rate"] = round(float(mr.median()), 4)
+        r = rate[rows].dropna()
+        if len(r) and abs(float(r.median()) - 1.0) < 0.002 and float(r.std() if len(r) > 1 else 0.0) < 1e-6:
+            d["quote_in_account_currency"] = True
+
+
+def _instrument_info(df: pd.DataFrame, found: dict, out: pd.DataFrame, kind: str, cats: pd.Series | None = None) -> dict:
     """To, co raport sam mówi o instrumentach: nazwa, kategoria i czy są notowane w walucie rachunku."""
     info: dict[str, dict] = {}
     name_col = found.get("name")
@@ -488,11 +567,8 @@ def _instrument_info(df: pd.DataFrame, found: dict, out: pd.DataFrame, kind: str
             # w arkuszu otwartych pozycji ta sama kolumna niesie nazwę (wiersz zbiorczy) albo numer pozycji
             if name and not name.replace(".", "").isdigit() and not (kind == "open" and bool(is_position.at[i])):
                 d.setdefault("name", name)
-        if cat_col is not None:
-            raw = df.at[i, cat_col]
-            cat = "" if raw is None or (isinstance(raw, float) and np.isnan(raw)) else str(raw).strip().upper()
-            if cat:
-                d.setdefault("category", cat)
+        if cats is not None and cats.at[i]:
+            d.setdefault("category", cats.at[i])
     # cena x ilość == wartość w walucie rachunku  =>  instrument jest notowany w walucie rachunku
     price = out["open_price"] if kind == "closed" else out.get("market_price")
     value = out["purchase_value"] if kind == "closed" else out.get("_value")
@@ -532,18 +608,16 @@ def _build_positions(df: pd.DataFrame, label: str, kind: str) -> tuple[pd.DataFr
         out[c] = _num(df, found, c, 0.0).fillna(0.0)
     out["gross_pl"] = _num(df, found, "gross_pl", np.nan)
     out["comment"] = _txt(df, found, "comment")
+    cats = _row_categories(df, found, out, kind)
+    is_cfd = cats.map(category_class) == "CFD"
+    # CFD na akcję: ten sam ticker co akcja, ale zupełnie inna wycena - dostaje własny symbol
+    out["symbol"] = [cfd_symbol(s) if c and s else s for s, c in zip(out["symbol"], is_cfd)]
     if kind == "open" and "purchase_value" not in found and "value" in found:
         # nowszy raport podaje wartość rynkową i wynik zamiast wartości zakupu
-        if "category" in found:
-            # kategoria stoi tylko w wierszu zbiorczym instrumentu - wiersze pozycji dziedziczą ją po tickerze
-            cat = df[found["category"]].map(lambda v: v.strip().upper() if isinstance(v, str) else "")
-            by_symbol = {s: c for s, c in zip(out["symbol"], cat) if s and c}
-            cat = pd.Series([c or by_symbol.get(s, "") for s, c in zip(out["symbol"], cat)], index=df.index)
-            is_stock = cat.map(lambda c: CATEGORY_CLASS.get(c, "STOCK") != "CFD")
-        else:
-            is_stock = True
-        out["purchase_value"] = (out["_value"] - out["gross_pl"]).where(is_stock)
-    info = _instrument_info(df, found, out, kind)
+        out["purchase_value"] = (out["_value"] - out["gross_pl"]).where(~is_cfd)
+    info = _instrument_info(df, found, out, kind, cats)
+    if kind == "closed" and is_cfd.any():
+        _cfd_terms(df, found, out, is_cfd, info)
     # wiersze podsumowań ("Total", "Profit/loss", wiersz zbiorczy instrumentu) i puste
     ok = (out["symbol"] != "") & out["open_time"].notna() & out["volume"].notna() & (out["type"] != "")
     if kind == "closed":
@@ -571,6 +645,9 @@ def _build_cash(df: pd.DataFrame, label: str) -> pd.DataFrame:
     sym = _txt(df, found, "symbol").map(clean_symbol)
     from_comment = out["comment"].str.upper().str.extract(_SYM_IN_COMMENT, expand=False).fillna("").map(clean_symbol)
     out["symbol"] = np.where(sym != "", sym, from_comment)
+    if "category" in found:
+        is_cfd = df[found["category"]].map(category_class) == "CFD"
+        out["symbol"] = [cfd_symbol(s) if c and s else s for s, c in zip(out["symbol"], is_cfd)]
     out["amount"] = _num(df, found, "amount", np.nan)
     out = out[out["time"].notna() & out["amount"].notna() & (out["type_raw"] != "")].copy()
     # TRANSFER / OTHER bez symbolu traktujemy wg znaku jak przepływ zewnętrzny tylko dla TRANSFER
@@ -698,14 +775,19 @@ def parse_export(files) -> XTBExport:
     for info in infos:
         for sym, d in info.items():
             tgt = exp.instruments.setdefault(sym, {})
-            for k in ("name", "category"):
+            for k in ("name", "category", "multiplier", "margin_rate", "quote_in_account_currency"):
                 if d.get(k) and k not in tgt:
                     tgt[k] = d[k]
             tgt.setdefault("_ratios", []).extend(d.get("_ratios", []))
     for sym, d in exp.instruments.items():
         ratios = d.pop("_ratios", [])
-        if ratios and abs(float(np.median(ratios)) - 1.0) < 0.004:
+        if d.pop("quote_in_account_currency", False) or (
+                category_class(d.get("category", "")) != "CFD" and ratios and abs(float(np.median(ratios)) - 1.0) < 0.004):
             d["currency"] = exp.currency
+    # operacja gotówkowa bez kategorii, a ticker występuje tylko jako CFD -> ten sam symbol co pozycje
+    held = set(exp.closed["symbol"]) | set(exp.open["symbol"])
+    if len(exp.cash):
+        exp.cash["symbol"] = [s + "_4" if s and s not in held and s + "_4" in held else s for s in exp.cash["symbol"]]
     if exp.currency != "PLN":
         exp.notes.append(f"Rachunek prowadzony w {exp.currency}. Walutę wyświetlania (PLN / USD / EUR) wybierasz na pasku u góry.")
 

@@ -17,6 +17,8 @@ import numpy as np
 import pandas as pd
 
 EXTERNAL_FLOW_KINDS = ("DEPOSIT", "WITHDRAWAL", "TRANSFER")   # "INTERNAL" (przelew między własnymi rachunkami) nie jest przepływem
+STOCK_LEVEL_TOLERANCE = float(np.log(1.25))    # akcje: notowania do 25% od ceny transakcji uznajemy za tę samą skalę
+CFD_LEVEL_TOLERANCE = 0.02                      # CFD: 2% - przy dźwigni różnica poziomów to duży fałszywy wynik
 CASH_BUCKET = "_GOTÓWKA"      # wynik bez przypisanego instrumentu (odsetki, opłaty ogólne)
 OTHER_BUCKET = "_INNE"        # operacje z symbolem, którego nie ma w tabelach pozycji
 
@@ -92,10 +94,13 @@ def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, m
              przeliczana po bieżącym kursie; zmiana jej wartości z tytułu kursu trafia do wyniku (koszyk gotówki).
     """
     warnings: list[str] = []
-    pos_cols = ["symbol", "type", "volume", "open_time", "open_price", "close_time"]
+    pos_cols = ["symbol", "type", "volume", "open_time", "open_price", "close_time", "end_price"]
+    c = closed.copy()
+    c["end_price"] = pd.to_numeric(c["close_price"], errors="coerce") if "close_price" in c.columns else np.nan
     o = open_.copy()
     o["close_time"] = pd.NaT
-    pos = pd.concat([closed[pos_cols], o[pos_cols]], ignore_index=True) if len(closed) or len(o) else \
+    o["end_price"] = pd.to_numeric(o["market_price"], errors="coerce") if "market_price" in o.columns else np.nan
+    pos = pd.concat([c[pos_cols], o[pos_cols]], ignore_index=True) if len(c) or len(o) else \
         pd.DataFrame(columns=pos_cols)
 
     starts = [t for t in (cash["time"].min() if len(cash) else None,
@@ -179,8 +184,43 @@ def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, m
         fxs = pd.DataFrame(index=dates)
 
     pxv, fxv = px.values if m else np.zeros((n, 0)), fxs.values if m else np.zeros((n, 0))
-    nominal = qty * pxv * mult * fxv
-    upl = (qty * pxv - cost) * mult * fxv
+
+    # Wycena pozycji. Ceny transakcji z raportu są pewne; notowania dają tylko kształt ścieżki pomiędzy nimi.
+    # Gdy poziom notowań nie pasuje do cen transakcji (split, pensy zamiast funtów, inny kontrakt, zły ticker),
+    # pozycja jest wyceniana notowaniami przeskalowanymi tak, by w dniu otwarcia i zamknięcia zgadzały się z raportem.
+    mv = np.zeros((n, m))
+    rescaled: set[str] = set()
+    for p in pos.itertuples(index=False):
+        i0 = day_idx(p.open_time)
+        i1 = n if pd.isna(p.close_time) else day_idx(p.close_time)
+        if i0 >= n or i1 <= i0:
+            continue
+        j = sidx[p.symbol]
+        series = pxv[:, j]
+        last = min(i1, n) - 1
+        anchor = i1 if i1 < n else n - 1
+        r0 = p.open_price / series[i0] if series[i0] > 0 and p.open_price > 0 else 1.0
+        r1 = p.end_price / series[anchor] if (p.end_price == p.end_price and p.end_price > 0 and series[anchor] > 0) else r0
+        tol = CFD_LEVEL_TOLERANCE if is_cfd[j] else STOCK_LEVEL_TOLERANCE
+        if p.symbol in no_price or max(abs(np.log(r0)), abs(np.log(r1))) > tol:
+            span = anchor - i0
+            w = (np.arange(i0, last + 1) - i0) / span if span > 0 else np.zeros(last + 1 - i0)
+            k = np.exp((1.0 - w) * np.log(r0) + w * np.log(r1))
+            if p.symbol not in no_price:
+                rescaled.add(p.symbol)
+        else:
+            k = 1.0
+        sgn = -1.0 if p.type == "SELL" else 1.0
+        mv[i0:last + 1, j] += sgn * p.volume * series[i0:last + 1] * k
+    if rescaled:
+        warnings.append("Notowania w innej skali niż ceny transakcji z raportu (split, inna waluta lub inny kontrakt) dla: "
+                        + ", ".join(sorted(rescaled)) + ". Wycenę dopasowano do cen transakcji; sprawdź ticker w zakładce Tickery.")
+    if m:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            pxv = np.where(np.abs(qty) > 1e-12, mv / qty, pxv)     # cena efektywna: wartość / ilość
+        px = pd.DataFrame(pxv, index=dates, columns=symbols)
+    nominal = mv * mult * fxv
+    upl = (mv - cost) * mult * fxv
     value = np.where(is_cfd, upl, nominal) if m else np.zeros((n, 0))
 
     # gotówka i przepływy: saldo prowadzone w walucie każdego rachunku, wyceniane dziennym kursem do waluty bazowej
@@ -232,8 +272,27 @@ def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, m
 
     prev = np.concatenate([[0.0], equity[:-1]])
     start_cap = prev + flows
+    # Ujemna wartość portfela oznacza błąd danych (zła wycena, brakująca operacja), a nie prawdziwy wynik.
+    # Takie dni nie wchodzą do łańcucha stóp zwrotu - inaczej jeden zły dzień zerowałby TWR na zawsze.
+    bad = (equity <= 0) & (np.abs(equity) > 1e-9)
+    if bad.any():
+        idx = np.flatnonzero(bad)
+        worst = int(idx[np.argmin(equity[idx])])
+        parts = {s: float(value[worst, j]) for j, s in enumerate(symbols)}
+        parts["gotówka"] = float(cash_bal[worst])
+        name, amount = min(parts.items(), key=lambda kv: kv[1])
+        detail = ""
+        if name in sidx:
+            j = sidx[name]
+            detail = (f" ({'CFD' if is_cfd[j] else 'akcje/ETF'}, ilość {qty[worst, j]:g}, cena {pxv[worst, j]:.2f} "
+                      f"{cur[j]}, mnożnik {mult[j]:g})")
+        warnings.append(
+            f"W {len(idx)} dniach ({dates[idx[0]].date()} - {dates[idx[-1]].date()}) wartość portfela wychodzi ujemna "
+            f"(najniżej {equity[worst]:.0f} {base}). Największy ujemny składnik: {name}{detail}: {amount:.0f} {base}. "
+            "To błąd danych lub wyceny tej pozycji; te dni pominięto w stopach zwrotu.")
     with np.errstate(divide="ignore", invalid="ignore"):
-        ret = np.where(start_cap > 1e-9, equity / start_cap - 1.0, 0.0)
+        after_bad = np.concatenate([[False], bad[:-1]])          # dzień powrotu z ujemnej wartości też nie ma sensownej stopy
+        ret = np.where((start_cap > 1e-9) & ~bad & ~after_bad, equity / start_cap - 1.0, 0.0)
 
     dvalue = np.diff(np.vstack([np.zeros((1, m)), value]), axis=0) if m else np.zeros((n, 0))
     pnl = pd.DataFrame(dvalue + by_symbol, index=dates, columns=symbols)

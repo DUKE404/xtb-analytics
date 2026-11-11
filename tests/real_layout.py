@@ -171,3 +171,42 @@ def usd_account(text_numbers: bool = False) -> tuple[str, bytes]:
 
 PLN_CASH_END = round(sum(r[3] for r in PLN_CASH), 2)
 USD_CASH_END = round(sum(r[3] for r in USD_CASH), 2)
+
+
+# --------------------------------------------------------------------------- rachunek z CFD i akcją sprzed splitu
+
+CFD_ACC = "50999001"
+
+
+def _cfd_row(name, ticker, category, side, volume, open_price, open_time, close_price, close_time, mult, rate, margin_rate, pos_id):
+    sgn = 1 if side == "BUY" else -1
+    pl = round(sgn * volume * mult * (close_price - open_price) * rate, 2)
+    margin = round(volume * mult * open_price * rate * margin_rate, 2)
+    return [name, ticker, category, side, volume, open_price, open_time, close_price, close_time, "My Trades", pl, pl,
+            None, None, None, None, 0, margin, 0, 0, rate, rate, "User", pos_id, None]
+
+
+def cfd_account() -> tuple[str, bytes]:
+    """Mały rachunek PLN: krótki CFD na akcję (ten sam ticker co akcja), CFD na indeks, CFD spoza wbudowanej tabeli
+    oraz zwykła akcja kupiona i sprzedana po cenach sprzed splitu."""
+    d = datetime
+    cfds = [
+        _cfd_row("Nvidia", "NVDA.US", "CFD", "SELL", 10, 900.0, d(2026, 3, 3, 15, 0), 950.0, d(2026, 3, 10, 15, 0), 1, 4.0, 0.2, 3100000001),
+        _cfd_row("US100", "US100", "CFD", "BUY", 0.1, 18000.0, d(2026, 3, 12, 15, 0), 18200.0, d(2026, 3, 19, 15, 0), 20, 4.0, 0.05, 3100000002),
+        _cfd_row("Bitcoin", "BITCOIN", "CRYPTO", "BUY", 0.05, 60000.0, d(2026, 3, 20, 15, 0), 66000.0, d(2026, 3, 27, 15, 0), 1, 4.0, 0.5, 3100000003),
+    ]
+    stock = _closed_row("Nvidia", "NVDA.US", 1, 900.0, d(2026, 4, 1, 15, 0), 1000.0, d(2026, 4, 15, 15, 0), 4.0, 4.0, 3100000004)
+    cash = [("Deposit", None, d(2026, 3, 2, 9, 0), 5000.00, "Adyen BLIK deposit, id 2")]
+    for row in cfds:
+        cash.append(("Close trade", row[1], row[8], row[10], f"CLOSE {row[3]} {row[4]} {row[1]} @ {row[7]}"))
+    cash += [("Stock purchase", "NVDA.US", d(2026, 4, 1, 15, 0), -3600.00, "OPEN BUY NVDA.US 1 @ 900.00"),
+             ("Stock sell", "NVDA.US", d(2026, 4, 15, 15, 0), 4000.00, "CLOSE BUY NVDA.US 1 @ 1000.00")]
+    wb = Workbook()
+    _closed_sheet(wb, CFD_ACC, cfds + [stock])
+    ws = wb.create_sheet("Cash Operations")
+    for line in (["Account number", CFD_ACC], ["Cash Operations"], ["Date from (UTC)", d(2006, 1, 1)], ["Date to (UTC)", d(2026, 4, 30)], CASH_HEADER):
+        ws.append(line)
+    for i, (typ, ticker, when, amount, comment) in enumerate(cash):
+        category = None if not ticker else ("STOCK" if typ.startswith("Stock") else "CFD")
+        ws.append([typ, None, ticker, category, when, amount, 950000 + i, comment, "My Trades", None])
+    return f"PLN_{CFD_ACC}_2006-01-01_2026-04-30.xlsx", _save(wb)
