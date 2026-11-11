@@ -1,6 +1,7 @@
 // Komunikacja z serwerem: logowanie, sesja analizy, ekrany. Sesja żyje w pamięci serwera,
 // więc gdy serwer ją zgubi (uśpienie darmowej instancji), odtwarzamy ją z plików zapisanych w telefonie.
 
+import { setCurrency } from "./format.js";
 import { files, prefs } from "./store.js";
 
 export class ApiError extends Error {
@@ -71,6 +72,21 @@ function overridesFor(mode) {
   return prefs.get(`overrides:${mode}`, []);
 }
 
+/** Przyjmuje metadane sesji z serwera: waluta wyświetlania steruje formatowaniem kwot w całej aplikacji. */
+function adopt(session) {
+  state.session = session;
+  setCurrency(session.base);
+  return session;
+}
+
+/** Z plików w telefonie zostają tylko te, których serwer faktycznie użył (starszy eksport tego samego rachunku znika). */
+async function pruneFiles(session) {
+  if (state.mode !== "upload" || !session.files_used?.length) return;
+  const stored = await files.load();
+  const keep = stored.filter((f) => session.files_used.includes(f.name));
+  if (keep.length && keep.length < stored.length) await files.save(keep);
+}
+
 /** Tworzy sesję dla bieżącego trybu. W trybie "upload" bez plików w telefonie wraca do demo. */
 export async function createSession() {
   const form = new FormData();
@@ -83,10 +99,35 @@ export async function createSession() {
   if (mode === "demo") form.append("demo", "1");
   const ov = overridesFor(mode);
   if (ov.length) form.append("overrides", JSON.stringify(ov));
-  state.session = await request("/api/session", { method: "POST", body: form, timeout: 180000 });
+  form.append("base", prefs.get("base", "PLN"));
+  const off = mode === "upload" ? prefs.get("accounts:off", []) : [];
+  if (off.length) form.append("exclude", JSON.stringify(off));
+  adopt(await request("/api/session", { method: "POST", body: form, timeout: 180000 }));
   state.mode = mode;
   prefs.set("mode", mode);
+  await pruneFiles(state.session);
   return state.session;
+}
+
+/** Zmiana waluty wyświetlania i/lub zaznaczonych rachunków. accounts = numery rachunków do wliczenia. */
+export async function setView({ base, accounts }) {
+  const out = await withSession((sid) => request(`/api/session/${sid}/view`, { method: "PUT", json: { base, accounts }, timeout: 180000 }));
+  adopt(out);
+  prefs.set("base", out.base);
+  if (state.mode === "upload") prefs.set("accounts:off", out.accounts.filter((a) => !a.selected).map((a) => a.id));
+  return out;
+}
+
+/** Usuwa z telefonu pliki jednego rachunku i przelicza resztę. */
+export async function removeAccount(id) {
+  const acc = (state.session?.accounts || []).find((a) => a.id === id);
+  if (!acc) return state.session;
+  const stored = await files.load();
+  const keep = stored.filter((f) => !acc.files.includes(f.name));
+  if (!keep.length) return setMode("demo").then(async (s) => { await files.clear(); return s; });
+  await files.save(keep);
+  prefs.set("accounts:off", prefs.get("accounts:off", []).filter((x) => x !== id));
+  return createSession();
 }
 
 export async function setMode(mode) {
@@ -95,13 +136,16 @@ export async function setMode(mode) {
   return createSession();
 }
 
-/** Zapisuje wybrane pliki w telefonie i tworzy z nich sesję. Przy błędzie formatu przywraca poprzedni stan. */
+/** Dopisuje wybrane pliki do zapisanych w telefonie (ten sam plik zastępuje starszy) i tworzy z nich sesję.
+ *  Dzięki temu drugi rachunek (np. USD obok PLN) można dograć osobno. Przy błędzie przywraca poprzedni stan. */
 export async function uploadFiles(fileList) {
   const list = [];
   for (const f of fileList) list.push({ name: f.name, type: f.type, data: await f.arrayBuffer() });
   const previous = await files.load();
   const prevMode = state.mode;
-  await files.save(list);
+  const names = new Set(list.map((f) => f.name));
+  const kept = prevMode === "upload" ? previous.filter((f) => !names.has(f.name)) : [];
+  await files.save([...kept, ...list]);
   state.mode = "upload";
   try {
     return await createSession();
@@ -114,13 +158,12 @@ export async function uploadFiles(fileList) {
 
 export async function saveMapping(rows) {
   prefs.set(`overrides:${state.mode}`, rows);
-  state.session = await request(`/api/session/${state.session.sid}/mapping`, { method: "PUT", json: { mapping: rows }, timeout: 180000 });
-  return state.session;
+  return adopt(await request(`/api/session/${state.session.sid}/mapping`, { method: "PUT", json: { mapping: rows }, timeout: 180000 }));
 }
 
 export async function forgetDevice() {
   await files.clear();
-  ["mode", "overrides:demo", "overrides:upload", "settings"].forEach((k) => prefs.remove(k));
+  ["mode", "overrides:demo", "overrides:upload", "settings", "base", "accounts:off"].forEach((k) => prefs.remove(k));
   state.mode = "demo";
   state.settings = null;
   return createSession();

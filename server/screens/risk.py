@@ -146,8 +146,9 @@ def exposure(ctx, p) -> dict:
     if has_short or exp.abs().sum() + cash > equity * 1.02:
         blocks.append(B.note("Wartości ujemne to pozycje krótkie. Przy CFD ekspozycją jest wartość nominalna, dlatego suma "
                              "może przekraczać 100% kapitału."))
-    cur = risk.currency_exposure(pf.value.iloc[-1], pf.meta, cash, equity)
+    cur = risk.currency_exposure(pf.value.iloc[-1], pf.meta, ctx.cash_by_currency(), equity, ctx.base)
     blocks.append(B.chart(B.hbar(cur["share"], "pct", 1, signed=True), "Waluty: co zależy od którego kursu",
+                          "Liczy się waluta notowań akcji i waluta gotówki na każdym rachunku. "
                           "Nominał CFD nie jest ekspozycją walutową - od kursu zależy tylko niezrealizowany wynik. ETF na akcje "
                           "globalne notowany w EUR lub USD ma w praktyce ryzyko walut spółek z indeksu."))
     liq = risk.liquidity_table(pf.qty.iloc[-1][~pf.is_cfd], ctx.market.volumes)

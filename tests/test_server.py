@@ -10,7 +10,7 @@ from server.screens import NAV, SCREENS
 from server.sessions import SessionStore
 
 CHART_TYPES = {"line", "hbar", "bars", "heatmap", "hist", "fan"}
-FMTS = {"pln", "pct", "num", "int", "days", "x", "text"}
+FMTS = {"zl", "pln", "pct", "num", "int", "days", "x", "text"}
 
 
 def synthetic_provider(is_demo):

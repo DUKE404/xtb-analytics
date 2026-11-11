@@ -191,3 +191,40 @@ zmienić w kodzie; najważniejsze są też wystawione w UI (panel boczny, tabela
 - **Pobieranie notowań** u dostawcy „na żywo” idzie w 4 wątkach naraz (zmienna `FETCH_WORKERS`), żeby pierwsze
   przeliczenie po przebudzeniu serwera było krótsze.
 - **Monte Carlo** losuje zwroty miesiąc po miesiącu, żeby zmieścić się w 512 MB pamięci darmowej instancji.
+
+## Po etapie 7 - prawdziwy eksport, kilka rachunków, waluta wyświetlania
+
+Powód: pierwszy prawdziwy plik użytkownika (`USD_51672516_2006-01-01_2026-11-11.xlsx`) miał inny układ niż
+założony w etapie 1, rachunek był w USD, a użytkownik ma też drugi rachunek w PLN i chce je łączyć.
+
+- **Układ pliku** odtworzono ze zrzutów ekranu obu rachunków: metadane nad nagłówkiem, kolumna `Ticker`
+  zamiast `Symbol`, czasy z dopiskiem „(UTC)”, w otwartych pozycjach wiersz zbiorczy instrumentu nad wierszami
+  pozycji, na końcu zamkniętych wiersz sumy. Pliki testowe (`tests/real_layout.py`) są zbudowane według tych
+  zrzutów; oryginalnego pliku nie miałem.
+- **Waluta rachunku** jest brana z arkusza otwartych pozycji (kolumna Currency przy „Open position value”),
+  a gdy jej tam nie ma - z początku nazwy pliku (`USD_…`). Numer rachunku: z wiersza „Account number”.
+- **Data raportu**: „Data as of report generated”. Daty „Date from 2006-01-01” nie biorę za początek historii -
+  portfel zaczyna się od pierwszej operacji.
+- **Otwarte pozycje** nie mają wartości zakupu; przyjmuję wartość rynkowa minus wynik brutto.
+- **Podpowiedzi z raportu**: nazwa i kategoria instrumentu idą do tabeli tickerów. Gdy wartość pozycji równa się
+  cena × ilość, instrument jest notowany w walucie rachunku (tak rozpoznaję np. SMH.UK jako ETF w USD).
+  Kolejność: poprawki użytkownika > wbudowana tabela > podpowiedzi z raportu > reguły z końcówki symbolu.
+- **Kilka rachunków**: pliki są grupowane po numerze rachunku. Kilka plików xlsx tego samego rachunku - liczy
+  się najnowszy raport (starszy powtarzałby te same operacje).
+- **Przelewy wewnętrzne**: operacja `Transfer` z komentarzem „from TA: A to: B”, gdy oba rachunki są zaznaczone,
+  nie jest przepływem zewnętrznym. Obie nogi są wyceniane kursem NBP z dnia przelewu, więc różnica (marża
+  wymiany XTB) wychodzi jako mały ujemny wynik w koszyku gotówki. Gdy zaznaczony jest jeden rachunek, ten sam
+  przelew jest dla niego wpłatą albo wypłatą.
+- **Gotówka w kilku walutach**: saldo prowadzę osobno w walucie każdego rachunku i wyceniam codziennie kursem
+  NBP. Zmiana wartości salda z samego kursu jest częścią wyniku (koszyk gotówki; w atrybucji jako efekt walutowy).
+- **Waluta wyświetlania** (PLN / USD / EUR) to waluta bazowa całego silnika, nie przeliczenie gotowych liczb:
+  kursy krzyżowe przez złotego z tabeli NBP, benchmarki przeliczone na bazę, VaR i scenariusze w bazie. W scenariuszach
+  szok „USD/PLN +15%” przy bazie USD oznacza spadek wartości aktywów złotowych o 1/1,15 − 1.
+- **Koszt przewalutowania** (szacunek 0,5%) dotyczy tylko instrumentów w walucie, w której nie ma zaznaczonego
+  rachunku - akcje w USD kupowane z rachunku USD nie są przewalutowywane.
+- **Podatki** zawsze w PLN, z kursów NBP, niezależnie od waluty wyświetlania. FIFO osobno na każdym rachunku.
+  Kwoty z rachunku walutowego, których nie da się policzyć z ceny instrumentu (prowizje, opłaty, CFD, dywidendy
+  bez kwoty na akcję), przeliczam kursem NBP z dnia operacji - uproszczenie względem D-1.
+- **Kontrola wyceny**: ostrzeżenie, gdy ostatnia cena z notowań różni się o ponad 8% od „Current price” z raportu.
+- **Domyślna waluta wyświetlania to PLN** także dla samego rachunku USD (polski podatnik, podatki w złotych).
+- **Czas UTC** z eksportu traktuję jak czas lokalny przy przypisaniu do dnia.

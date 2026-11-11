@@ -67,6 +67,16 @@ button { background: none; border: 0; padding: 0; cursor: pointer; text-align: i
 .bar-title { margin: 0; font: 600 21px/1.1 var(--serif); letter-spacing: -0.005em; }
 .bar-meta { font-size: 12.5px; color: var(--ink-3); text-align: right; white-space: nowrap; }
 .bar-meta .demo { color: var(--brass); }
+.view-btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 30px; margin: -4px -6px 0 0; padding: 4px 8px 4px 10px;
+  border-radius: 8px; color: var(--ink); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.view-btn::after { content: ""; width: 6px; height: 6px; margin-top: -3px; border-right: 1.5px solid var(--brass); border-bottom: 1.5px solid var(--brass); transform: rotate(45deg); }
+.link-btn { min-height: 36px; padding: 6px 2px 6px 12px; color: var(--brass); font-size: 14px; font-weight: 500; }
+.ledger .label.stack { display: block; min-width: 0; color: var(--ink); font-variant-numeric: tabular-nums; }
+.ledger .label.stack small { display: block; margin-top: 2px; color: var(--ink-3); font-size: 12.5px; font-weight: 400; }
+.ledger + .btn { margin-top: 14px; }
 
 /* ---------- pod-nawigacja (sekcje działu) ---------- */
 .subnav {

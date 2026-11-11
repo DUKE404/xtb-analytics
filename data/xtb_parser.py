@@ -117,8 +117,9 @@ def parse_datetime(value) -> pd.Timestamp:
 # --------------------------------------------------------------------------- #
 
 CLOSED_COLS = {
-    "position": ["position", "pozycja", "id pozycji", "position id", "numer pozycji", "order", "zlecenie"],
-    "symbol": ["symbol", "instrument", "ticker", "walor"],
+    "position": ["position id", "position", "pozycja", "id pozycji", "numer pozycji", "order", "zlecenie"],
+    # "ticker" ma pierwszeństwo: w nowszych raportach kolumna "Instrument" to nazwa spółki, a symbol jest w "Ticker"
+    "symbol": ["ticker", "symbol", "walor", "instrument"],
     "type": ["type", "typ", "side", "kierunek", "strona"],
     "volume": ["volume", "wolumen", "ilosc", "quantity", "liczba"],
     "open_time": ["open time", "czas otwarcia", "data otwarcia", "open date", "otwarcie"],
@@ -128,19 +129,25 @@ CLOSED_COLS = {
     "purchase_value": ["purchase value", "wartosc zakupu", "wartosc nabycia", "wartosc kupna"],
     "sale_value": ["sale value", "wartosc sprzedazy"],
     "margin": ["margin", "depozyt", "depozyt zabezpieczajacy"],
-    "commission": ["commission", "prowizja"],
+    "commission": ["commission", "open commission", "prowizja"],
     "swap": ["swap", "punkty swapowe"],
     "rollover": ["rollover"],
-    "gross_pl": ["gross p l", "gross pl", "gross profit", "profit", "zysk strata brutto", "zysk brutto",
+    "gross_pl": ["gross p l", "gross pl", "gross profit", "profit loss", "profit", "zysk strata brutto", "zysk brutto",
                  "wynik brutto", "zysk strata", "zysk", "wynik", "p l"],
     "comment": ["comment", "komentarz"],
+    # kolumny pomocnicze (nieobowiązkowe): nazwa i kategoria instrumentu, kurs przeliczenia
+    "name": ["instrument", "instrument position", "nazwa", "nazwa instrumentu"],
+    "category": ["category", "kategoria"],
+    "open_rate": ["open conversion rate", "kurs przeliczenia otwarcia"],
 }
 CLOSED_REQUIRED = ["symbol", "type", "volume", "open_time", "open_price", "close_time", "close_price"]
 
 OPEN_COLS = {
     k: v for k, v in CLOSED_COLS.items() if k not in ("close_time", "close_price", "sale_value")
 }
-OPEN_COLS["market_price"] = ["market price", "cena rynkowa", "aktualna cena", "current price", "cena biezaca"]
+OPEN_COLS["market_price"] = ["market price", "current price", "cena rynkowa", "aktualna cena", "cena biezaca"]
+OPEN_COLS["position"] = CLOSED_COLS["position"] + ["instrument position"]      # w arkuszu otwartych pozycji ID stoi w "Instrument/Position"
+OPEN_COLS["value"] = ["value", "market value", "wartosc rynkowa", "wartosc"]
 OPEN_REQUIRED = ["symbol", "type", "volume", "open_time", "open_price"]
 
 CASH_COLS = {
@@ -148,7 +155,7 @@ CASH_COLS = {
     "type": ["type", "typ", "rodzaj", "typ operacji"],
     "time": ["time", "czas", "data", "date", "data operacji"],
     "comment": ["comment", "komentarz", "opis"],
-    "symbol": ["symbol", "instrument", "ticker"],
+    "symbol": ["ticker", "symbol", "instrument"],
     "amount": ["amount", "kwota", "wartosc"],
 }
 CASH_REQUIRED = ["type", "time", "amount"]
@@ -173,7 +180,7 @@ _CASH_KIND_RULES = [
     ("WHT", ["withholding", "podatek u zrodla", "podatek od dywidend", "wht"]),
     ("DIVIDEND", ["divident", "dividend", "dywidend"]),
     ("STOCK_PURCHASE", ["stock purchase", "zakup akcji", "zakup etf", "kupno akcji", "purchase"]),
-    ("STOCK_SALE", ["stock sale", "sprzedaz akcji", "sprzedaz etf", "sale"]),
+    ("STOCK_SALE", ["stock sale", "stock sell", "sprzedaz akcji", "sprzedaz etf", "sale", "sell"]),
     ("CLOSE_TRADE", ["close trade", "zamkniecie pozycji", "zamkniecie transakcji", "profit loss",
                      "zysk strata", "closed position"]),
     ("SWAP", ["swap"]),
@@ -242,6 +249,12 @@ class XTBExport:
     as_of: pd.Timestamp | None = None
     currency: str = "PLN"
     notes: list[str] = field(default_factory=list)
+    # podpowiedzi z raportu: symbol -> {"name", "category", "currency"} (to, co XTB sam podaje o instrumencie)
+    instruments: dict = field(default_factory=dict)
+    original_currency: str | None = None     # waluta rachunku przed przeliczeniem kwot
+    account: str = ""                        # numer rachunku (gdy raport go podaje)
+    files: list = field(default_factory=list)      # nazwy plików, z których powstał
+    accounts: list = field(default_factory=list)   # po scaleniu: opis rachunków składowych
 
     @property
     def symbols(self) -> list[str]:
@@ -255,7 +268,7 @@ class XTBExport:
             "operacje gotówkowe": len(self.cash),
             "instrumenty": len(self.symbols),
             "stan na": None if self.as_of is None else self.as_of.date().isoformat(),
-            "waluta konta": self.currency,
+            "waluta konta": self.original_currency or self.currency,
         }
 
 
@@ -282,10 +295,15 @@ def _read_csv_raw(data: bytes) -> pd.DataFrame:
     return pd.DataFrame(rows, dtype=object)
 
 
+def norm_header(text) -> str:
+    """Nazwa kolumny po normalizacji; dopisek strefy czasowej ("Open Time (UTC)") jest pomijany."""
+    return re.sub(r"\s+utc$", "", norm(text))
+
+
 def _find_header(raw: pd.DataFrame) -> int | None:
     best, best_score = None, 0
     for i in range(min(40, len(raw))):
-        cells = [norm(c) for c in raw.iloc[i].tolist()]
+        cells = [norm_header(c) for c in raw.iloc[i].tolist()]
         score = sum(1 for c in cells if c and c in _ALL_ALIASES)
         if score > best_score:
             best, best_score = i, score
@@ -293,7 +311,7 @@ def _find_header(raw: pd.DataFrame) -> int | None:
 
 
 def _table(raw: pd.DataFrame, header_idx: int) -> pd.DataFrame:
-    header = [norm(c) for c in raw.iloc[header_idx].tolist()]
+    header = [norm_header(c) for c in raw.iloc[header_idx].tolist()]
     body = raw.iloc[header_idx + 1:].copy()
     keep = [j for j, h in enumerate(header) if h]
     body = body.iloc[:, keep]
@@ -352,10 +370,53 @@ def _account_currency(raw: pd.DataFrame, header_idx: int) -> str | None:
                 if i + 1 < len(raw):
                     cands.append(raw.iloc[i + 1, j])
                 for c in cands:
-                    s = str(c).strip().upper() if c is not None else ""
+                    s = c.strip().upper() if isinstance(c, str) else ""     # puste komórki to NaN, nie waluta
                     if re.fullmatch(r"[A-Z]{3}", s):
                         return s
     return None
+
+
+_ASOF_LABELS = ("as of", "date to", "data do", "stan na", "report date", "data raportu")
+
+
+def _report_date(raw: pd.DataFrame, header_idx: int) -> pd.Timestamp | None:
+    """Data raportu z wierszy nad tabelą, np. "Data as of report generated | 2026-11-11 09:59:32" lub "Date to (UTC)"."""
+    best = None
+    top = raw.iloc[:header_idx]
+    for i in range(len(top)):
+        row = top.iloc[i].tolist()
+        for j, cell in enumerate(row):
+            if isinstance(cell, str) and any(k in norm(cell) for k in _ASOF_LABELS):
+                for c in row[j + 1:]:
+                    ts = parse_datetime(c)
+                    if not pd.isna(ts) and 2000 <= ts.year <= 2100:
+                        best = ts.normalize() if best is None else max(best, ts.normalize())
+                        break
+    return best
+
+
+def _account_number(raw: pd.DataFrame, header_idx: int) -> str | None:
+    top = raw.iloc[:header_idx]
+    for i in range(len(top)):
+        row = top.iloc[i].tolist()
+        for j, cell in enumerate(row):
+            if norm(cell) in ("account number", "account", "numer rachunku", "rachunek", "numer konta", "konto"):
+                for c in row[j + 1:j + 4]:
+                    digits = _pos_id(c)
+                    if digits.isdigit() and len(digits) >= 5:
+                        return digits
+    return None
+
+
+def _account_from_filename(name: str) -> str | None:
+    m = re.match(r"^[A-Z]{3}_(\d{5,})_", name.replace("\\", "/").split("/")[-1])
+    return m.group(1) if m else None
+
+
+def _currency_from_filename(name: str) -> str | None:
+    """Nowsze eksporty nazywają plik od waluty rachunku: "USD_51672516_2006-01-01_2026-11-11.xlsx"."""
+    m = re.match(r"^([A-Z]{3})_\d+_", name.replace("\\", "/").split("/")[-1])
+    return m.group(1) if m else None
 
 
 def _date_from_name(name: str) -> pd.Timestamp | None:
@@ -405,7 +466,46 @@ def _pos_id(v) -> str:
     return str(v).strip()
 
 
-def _build_positions(df: pd.DataFrame, label: str, kind: str) -> pd.DataFrame:
+CATEGORY_CLASS = {"STOCK": "STOCK", "STOCKS": "STOCK", "AKCJE": "STOCK", "ETF": "ETF", "ETFS": "ETF"}
+
+
+def _instrument_info(df: pd.DataFrame, found: dict, out: pd.DataFrame, kind: str) -> dict:
+    """To, co raport sam mówi o instrumentach: nazwa, kategoria i czy są notowane w walucie rachunku."""
+    info: dict[str, dict] = {}
+    name_col = found.get("name")
+    if name_col == found.get("symbol"):
+        name_col = None                      # starszy układ: "Instrument" to symbol, nazwy nie ma
+    cat_col = found.get("category")
+    is_position = (out["type"] != "") & out["open_time"].notna()
+    for i in df.index:
+        sym = out.at[i, "symbol"]
+        if not sym:
+            continue
+        d = info.setdefault(sym, {})
+        if name_col is not None:
+            raw = df.at[i, name_col]
+            name = "" if raw is None or (isinstance(raw, float) and np.isnan(raw)) else str(raw).strip()
+            # w arkuszu otwartych pozycji ta sama kolumna niesie nazwę (wiersz zbiorczy) albo numer pozycji
+            if name and not name.replace(".", "").isdigit() and not (kind == "open" and bool(is_position.at[i])):
+                d.setdefault("name", name)
+        if cat_col is not None:
+            raw = df.at[i, cat_col]
+            cat = "" if raw is None or (isinstance(raw, float) and np.isnan(raw)) else str(raw).strip().upper()
+            if cat:
+                d.setdefault("category", cat)
+    # cena x ilość == wartość w walucie rachunku  =>  instrument jest notowany w walucie rachunku
+    price = out["open_price"] if kind == "closed" else out.get("market_price")
+    value = out["purchase_value"] if kind == "closed" else out.get("_value")
+    if price is not None and value is not None:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = value / (out["volume"] * price)
+        for sym, r in zip(out["symbol"][is_position], ratio[is_position]):
+            if sym and np.isfinite(r) and r > 0:
+                info.setdefault(sym, {}).setdefault("_ratios", []).append(float(r))
+    return info
+
+
+def _build_positions(df: pd.DataFrame, label: str, kind: str) -> tuple[pd.DataFrame, dict]:
     aliases, required, out_cols = (
         (CLOSED_COLS, CLOSED_REQUIRED, CLOSED_OUT) if kind == "closed" else (OPEN_COLS, OPEN_REQUIRED, OPEN_OUT)
     )
@@ -426,19 +526,32 @@ def _build_positions(df: pd.DataFrame, label: str, kind: str) -> pd.DataFrame:
         out["sale_value"] = _num(df, found, "sale_value", np.nan)
     else:
         out["market_price"] = _num(df, found, "market_price", np.nan)
+        out["_value"] = _num(df, found, "value", np.nan)
     out["purchase_value"] = _num(df, found, "purchase_value", np.nan)
     for c in ("margin", "commission", "swap", "rollover"):
         out[c] = _num(df, found, c, 0.0).fillna(0.0)
     out["gross_pl"] = _num(df, found, "gross_pl", np.nan)
     out["comment"] = _txt(df, found, "comment")
-    # wiersze podsumowań ("Total"/"Suma") i puste
+    if kind == "open" and "purchase_value" not in found and "value" in found:
+        # nowszy raport podaje wartość rynkową i wynik zamiast wartości zakupu
+        if "category" in found:
+            # kategoria stoi tylko w wierszu zbiorczym instrumentu - wiersze pozycji dziedziczą ją po tickerze
+            cat = df[found["category"]].map(lambda v: v.strip().upper() if isinstance(v, str) else "")
+            by_symbol = {s: c for s, c in zip(out["symbol"], cat) if s and c}
+            cat = pd.Series([c or by_symbol.get(s, "") for s, c in zip(out["symbol"], cat)], index=df.index)
+            is_stock = cat.map(lambda c: CATEGORY_CLASS.get(c, "STOCK") != "CFD")
+        else:
+            is_stock = True
+        out["purchase_value"] = (out["_value"] - out["gross_pl"]).where(is_stock)
+    info = _instrument_info(df, found, out, kind)
+    # wiersze podsumowań ("Total", "Profit/loss", wiersz zbiorczy instrumentu) i puste
     ok = (out["symbol"] != "") & out["open_time"].notna() & out["volume"].notna() & (out["type"] != "")
     if kind == "closed":
         ok &= out["close_time"].notna()
     out = out[ok].copy()
     if not len(out):
-        return _empty(out_cols)
-    return out[out_cols].sort_values("open_time").reset_index(drop=True)
+        return _empty(out_cols), info
+    return out[out_cols].sort_values("open_time").reset_index(drop=True), info
 
 
 _SYM_IN_COMMENT = re.compile(r"\b([A-Z0-9]{1,12}\.[A-Z]{2}(?:_\d)?)\b")
@@ -496,8 +609,13 @@ def parse_export(files) -> XTBExport:
     exp = XTBExport()
     parts: dict[str, list[pd.DataFrame]] = {"closed": [], "open": [], "cash": []}
     seen, name_date, errors = [], None, []
+    infos: list[dict] = []
+    file_currency = None
+    account = None
 
     for fname, data in files:
+        file_currency = _currency_from_filename(fname) or file_currency
+        account = _account_from_filename(fname) or account
         for label, raw in _raw_tables(fname, data):
             if raw is None or raw.dropna(how="all").empty:
                 continue
@@ -519,8 +637,17 @@ def parse_export(files) -> XTBExport:
                 exp.currency = cur
             if kind == "open":
                 name_date = _date_from_name(sheet_name) or name_date
+            account = _account_number(raw, hdr) or account
+            rep_date = _report_date(raw, hdr)
+            if rep_date is not None:
+                name_date = rep_date if name_date is None else max(name_date, rep_date)
             try:
-                parts[kind].append(_build_cash(tbl, label) if kind == "cash" else _build_positions(tbl, label, kind))
+                if kind == "cash":
+                    parts[kind].append(_build_cash(tbl, label))
+                else:
+                    table, info = _build_positions(tbl, label, kind)
+                    parts[kind].append(table)
+                    infos.append(info)
             except XTBFormatError as exc:
                 errors.append(str(exc))
 
@@ -564,8 +691,23 @@ def parse_export(files) -> XTBExport:
     if unknown:
         exp.notes.append("Nierozpoznane typy operacji gotówkowych (traktowane jako wynik, nie wpłata): "
                          + ", ".join(map(str, unknown[:8])))
+    if file_currency and exp.currency == "PLN":
+        exp.currency = file_currency
+    exp.account = account or ""
+    # podpowiedzi o instrumentach: nazwa, kategoria; waluta, gdy wartości zgadzają się 1:1 z ceną x ilość
+    for info in infos:
+        for sym, d in info.items():
+            tgt = exp.instruments.setdefault(sym, {})
+            for k in ("name", "category"):
+                if d.get(k) and k not in tgt:
+                    tgt[k] = d[k]
+            tgt.setdefault("_ratios", []).extend(d.get("_ratios", []))
+    for sym, d in exp.instruments.items():
+        ratios = d.pop("_ratios", [])
+        if ratios and abs(float(np.median(ratios)) - 1.0) < 0.004:
+            d["currency"] = exp.currency
     if exp.currency != "PLN":
-        exp.notes.append(f"Konto prowadzone w {exp.currency}: kwoty są przeliczane na PLN po kursie NBP z dnia operacji.")
+        exp.notes.append(f"Rachunek prowadzony w {exp.currency}. Walutę wyświetlania (PLN / USD / EUR) wybierasz na pasku u góry.")
 
     last = [t for t in (exp.cash["time"].max() if len(exp.cash) else None,
                         exp.closed["close_time"].max() if len(exp.closed) else None,
@@ -579,3 +721,108 @@ def parse_export(files) -> XTBExport:
     exp.as_of = max([d for d in (name_date, last_event) if d is not None]) if (name_date or last_event) else None
     exp.notes = seen + exp.notes
     return exp
+
+
+# --------------------------------------------------------------------------- #
+# Kilka rachunków naraz
+# --------------------------------------------------------------------------- #
+
+_TRANSFER_ACCOUNTS = re.compile(r"from\s+TA:?\s*(\d+)\s+to:?\s*(\d+)", re.IGNORECASE)
+
+
+def _peek_account(name: str, data: bytes) -> str | None:
+    """Numer rachunku pliku: z nazwy albo z wiersza "Account number" w pierwszym arkuszu."""
+    acc = _account_from_filename(name)
+    if acc:
+        return acc
+    try:
+        for _, raw in _raw_tables(name, data):
+            hdr = _find_header(raw)
+            if hdr is not None:
+                acc = _account_number(raw, hdr)
+                if acc:
+                    return acc
+    except XTBFormatError:
+        return None
+    return None
+
+
+def parse_accounts(files) -> list[XTBExport]:
+    """Dzieli pliki na rachunki (po numerze rachunku) i parsuje każdy osobno.
+
+    Pliki bez numeru rachunku (np. stare eksporty CSV) trafiają razem do jednego rachunku. Gdy dla tego samego
+    rachunku wgrano kilka plików xlsx, liczy się najnowszy raport - starszy zawierałby pozycje, które w nowszym
+    są już zamknięte, i zostałyby policzone podwójnie.
+    """
+    if isinstance(files, (str, bytes)) or hasattr(files, "__fspath__"):
+        return [parse_export(files)]
+    groups: dict[str, list] = {}
+    for name, data in files:
+        groups.setdefault(_peek_account(name, data) or "", []).append((name, data))
+    out = []
+    for acc, group in groups.items():
+        excel = [f for f in group if f[0].lower().endswith((".xlsx", ".xlsm", ".xls"))]
+        if acc and len(excel) > 1 and len(excel) == len(group):
+            parsed = [parse_export([f]) for f in excel]
+            best = max(range(len(parsed)), key=lambda i: (parsed[i].as_of or pd.Timestamp.min, len(parsed[i].cash)))
+            exp = parsed[best]
+            exp.notes.append(f"Pominięto {len(excel) - 1} starszy eksport tego samego rachunku - liczy się najnowszy raport.")
+            exp.files = [excel[best][0]]
+        else:
+            exp = parse_export(group)
+            exp.files = [f[0] for f in group]
+        exp.account = exp.account or acc or ("rachunek" if len(groups) == 1 else f"rachunek {len(out) + 1}")
+        out.append(exp)
+    return out
+
+
+def merge_exports(exports: list[XTBExport], selected=None) -> XTBExport:
+    """Scala wybrane rachunki w jeden portfel. Każdy wiersz dostaje kolumny `account` i `currency` (waluta
+    rachunku, w której wyrażone są kwoty). Przelewy między wybranymi rachunkami przestają być wpłatą/wypłatą."""
+    chosen = [e for e in exports if selected is None or e.account in set(selected)]
+    if not chosen:
+        raise XTBFormatError("Nie wybrano żadnego rachunku. Zaznacz przynajmniej jeden.")
+    ids = {e.account for e in chosen}
+
+    def tag(df, e):
+        d = df.copy()
+        d["account"] = e.account
+        d["currency"] = e.currency
+        return d
+
+    def cat(frames, cols):
+        frames = [f for f in frames if len(f)]
+        if not frames:
+            d = _empty(cols)
+            d["account"] = pd.Series(dtype="object")
+            d["currency"] = pd.Series(dtype="object")
+            return d
+        return pd.concat(frames, ignore_index=True)
+
+    out = XTBExport(
+        closed=cat([tag(e.closed, e) for e in chosen], CLOSED_OUT), open=cat([tag(e.open, e) for e in chosen], OPEN_OUT),
+        cash=cat([tag(e.cash, e) for e in chosen], CASH_OUT),
+        as_of=max((e.as_of for e in chosen if e.as_of is not None), default=None))
+    currencies = sorted({e.currency for e in chosen})
+    out.currency = currencies[0] if len(currencies) == 1 else "MIX"
+    out.account = ", ".join(sorted(ids))
+    if len(out.cash):
+        out.cash = out.cash.sort_values("time").reset_index(drop=True)
+
+        def internal(row):
+            if row["kind"] != "TRANSFER":
+                return row["kind"]
+            m = _TRANSFER_ACCOUNTS.search(str(row["comment"]))
+            return "INTERNAL" if m and m.group(1) in ids and m.group(2) in ids else row["kind"]
+
+        out.cash["kind"] = out.cash.apply(internal, axis=1)
+    for e in chosen:
+        for sym, d in e.instruments.items():
+            tgt = out.instruments.setdefault(sym, {})
+            for k, v in d.items():
+                tgt.setdefault(k, v)
+        out.notes += [f"[{e.account}] {n}" for n in e.notes] if len(chosen) > 1 else list(e.notes)
+    out.accounts = [{"id": e.account, "currency": e.currency, "closed": len(e.closed), "open": len(e.open),
+                     "cash": len(e.cash), "as_of": e.as_of, "selected": e.account in ids,
+                     "files": list(getattr(e, "files", []))} for e in exports]
+    return out

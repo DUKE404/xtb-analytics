@@ -58,21 +58,28 @@ FIFO_COLS = ["year", "symbol", "country", "currency", "qty", "buy_date", "buy_pr
 
 
 def fifo_matches(closed: pd.DataFrame, open_: pd.DataFrame, meta: pd.DataFrame, fx: pd.DataFrame | None) -> pd.DataFrame:
-    """Paruje sprzedaże z zakupami metodą FIFO (per instrument) i przelicza obie strony po kursie NBP D-1."""
+    """Paruje sprzedaże z zakupami metodą FIFO i przelicza obie strony po kursie NBP D-1.
+
+    Kolejka FIFO jest osobna dla każdego instrumentu na każdym rachunku (kolumna `account`, jeśli jest) -
+    tak jak w przepisach: "pierwsze przyszło, pierwsze wyszło" stosuje się w ramach jednego rachunku.
+    """
     buys, sells = [], []
     for df, has_close in ((closed, True), (open_, False)):
-        for t in df.itertuples(index=False):
+        accounts = df["account"].astype(str).tolist() if "account" in df.columns else [""] * len(df)
+        for t, acc in zip(df.itertuples(index=False), accounts):
             if _is_cfd(meta, t.symbol) or t.type != "BUY":
                 continue
-            buys.append((t.symbol, t.open_time, float(t.volume), float(t.open_price)))
+            key = (t.symbol, acc)
+            buys.append((key, t.open_time, float(t.volume), float(t.open_price)))
             if has_close:
-                sells.append((t.symbol, t.close_time, float(t.volume), float(t.close_price)))
+                sells.append((key, t.close_time, float(t.volume), float(t.close_price)))
     rows = []
-    for sym in sorted({s[0] for s in sells}):
+    for key in sorted({s[0] for s in sells}):
+        sym = key[0]
         cur = str(meta.at[sym, "currency"]) if sym in meta.index else "PLN"
         country = str(meta.at[sym, "country"]) if sym in meta.index and "country" in meta.columns else "Nieznany"
-        queue = sorted([[b[1], b[2], b[3]] for b in buys if b[0] == sym], key=lambda x: x[0])
-        for _, when, qty, price in sorted([s for s in sells if s[0] == sym], key=lambda x: x[1]):
+        queue = sorted([[b[1], b[2], b[3]] for b in buys if b[0] == key], key=lambda x: x[0])
+        for _, when, qty, price in sorted([s for s in sells if s[0] == key], key=lambda x: x[1]):
             left = qty
             s_rate, s_date = _rate(fx, cur, when)
             while left > 1e-9 and queue:

@@ -29,8 +29,15 @@ def _betas(ctx) -> pd.Series:
     def build():
         local = ctx.market.prices.pct_change()
         proxy = ctx.market.benchmarks_local.pct_change()
-        return stress.estimate_betas(local, proxy, stress.factor_map(ctx.pf.meta, ctx.pf.current_exposure().index))
+        return stress.estimate_betas(local, proxy, stress.factor_map(ctx.pf.meta, ctx.pf.current_exposure().index, ctx.base))
     return ctx.memo("stress_betas", build)
+
+
+def _fx_remark(ctx) -> str:
+    if ctx.base == "PLN":
+        return "Osłabienie złotego w kryzysach częściowo amortyzuje spadki zagranicznych akcji."
+    return (f"Wynik liczony w {ctx.base}: osłabienie złotego w kryzysach obniża wartość polskich akcji i gotówki "
+            f"w PLN widzianą w {ctx.base}.")
 
 
 def stress_screen(ctx, p) -> dict:
@@ -43,16 +50,17 @@ def stress_screen(ctx, p) -> dict:
     betas = _betas(ctx) if use_beta else None
     custom = {f: p.float(f"s_{f}", CUSTOM_DEFAULTS.get(f, 0.0), -95.0, 300.0) / 100.0 for f in stress.FACTORS}
     scenarios = {k: v["shocks"] for k, v in stress.HISTORICAL.items()} | {CUSTOM: custom}
-    t = stress.run_scenarios(exp, pf.meta, equity, scenarios, betas)
+    cash = ctx.cash_by_currency()
+    t = stress.run_scenarios(exp, pf.meta, equity, scenarios, betas, ctx.base, cash)
     hist = t.drop(index=CUSTOM)
     worst = hist["pnl"].idxmin()
     detail = p.str("detail", CUSTOM, set(scenarios))
 
     shocks_tbl = pd.DataFrame({k: pd.Series(v) for k, v in scenarios.items()}).reindex(list(stress.FACTORS))
     shocks_tbl.insert(0, "factor", [stress.FACTORS[f] for f in shocks_tbl.index])
-    d = stress.apply_scenario(exp, pf.meta, scenarios[detail], betas)
+    d = stress.apply_scenario(exp, pf.meta, scenarios[detail], betas, ctx.base, cash)
     d.insert(0, "name", _names(ctx, d.index))
-    d["factor"] = [stress.FACTORS.get(f, "poza modelem") for f in d["eq_factor"]]
+    d["factor"] = ["kurs waluty" if f == stress.CASH_FACTOR else stress.FACTORS.get(f, "poza modelem") for f in d["eq_factor"]]
     d = d.sort_values("pnl")
     outside = d.index[d["eq_factor"] == ""].tolist()
 
@@ -62,8 +70,7 @@ def stress_screen(ctx, p) -> dict:
                          tip="Spółka o becie 1,5 względem swojego indeksu dostaje 1,5 raza większy szok niż indeks."))
     blocks = [
         B.statement(f"Powtórka scenariusza „{worst}” zabrałaby dzisiejszemu portfelowi {B.f_pln(abs(hist.at[worst, 'pnl']))}.",
-                    f"To {B.f_pct(abs(hist.at[worst, 'pct']))} kapitału. Osłabienie złotego w kryzysach częściowo "
-                    "amortyzuje spadki zagranicznych akcji."),
+                    f"To {B.f_pct(abs(hist.at[worst, 'pct']))} kapitału. " + _fx_remark(ctx)),
         B.chart(B.hbar(t["pnl"], "pln", 0, signed=True), "Wynik portfela w scenariuszach"),
         B.table(t.reset_index().rename(columns={"index": "name"}),
                 [("name", "Scenariusz", "text"), ("pnl", "Wynik", "pln"), ("pct", "% kapitału", "pct", 1)]),
@@ -168,7 +175,7 @@ def montecarlo_screen(ctx, p) -> dict:
 # --------------------------------------------------------------------------- co jeśli
 
 def _extra_returns(ctx, symbol: str) -> tuple[pd.Series, bool]:
-    """Historia zwrotów (w PLN) instrumentu, którego nie ma w eksporcie; pobierana przez dostawcę notowań."""
+    """Historia zwrotów (w walucie bazowej) instrumentu spoza eksportu; pobierana przez dostawcę notowań."""
     def build():
         row = auto_map(symbol)
         start, end = ctx.market.prices.index.min(), ctx.pf.as_of
@@ -176,8 +183,12 @@ def _extra_returns(ctx, symbol: str) -> tuple[pd.Series, bool]:
         if len(px) < 60:
             raise ValueError(f"Za mało notowań dla {symbol}.")
         is_cfd = row["asset_class"] == "CFD"
-        if not is_cfd and row["currency"] != "PLN":
-            fx = ctx.provider.fx_rates(row["currency"], start, end)
+        if not is_cfd and row["currency"] != ctx.base:
+            fx = ctx.provider.fx_rates(row["currency"], start, end) if row["currency"] != "PLN" else None
+            if ctx.base != "PLN":       # kurs krzyżowy przez złotego
+                b = ctx.market.fx_pln[ctx.base]
+                fx = (fx.reindex(fx.index.union(b.index)).ffill() / b.reindex(fx.index.union(b.index)).ffill()) \
+                    if fx is not None else 1.0 / b
             px = (px * fx.reindex(px.index.union(fx.index)).ffill().reindex(px.index)).dropna()
         return px.pct_change().dropna(), is_cfd
     return ctx.memo(("extra", symbol), build)

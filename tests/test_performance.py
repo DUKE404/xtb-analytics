@@ -109,12 +109,12 @@ def test_levels_to_returns_alignment():
 
 
 def test_summary_on_sample(portfolio, market):
-    bench = perf.levels_to_returns(market.benchmarks_pln["MSCIW"], portfolio.dates)
+    bench = perf.levels_to_returns(market.benchmarks_base["MSCIW"], portfolio.dates)
     s = perf.summary(portfolio.returns, bench, 0.04, portfolio.flows, portfolio.equity.iloc[-1])
     assert s["total_return"] == pytest.approx((1 + portfolio.returns).prod() - 1)
     assert 0.05 < s["volatility"] < 0.35 and -0.5 < s["max_drawdown"] < 0
     assert 0.2 < s["beta"] < 1.8 and np.isfinite(s["xirr"]) and np.isfinite(s["information_ratio"])
-    cmp = perf.comparison_table(portfolio.returns, perf.levels_to_returns(market.benchmarks_pln, portfolio.dates))
+    cmp = perf.comparison_table(portfolio.returns, perf.levels_to_returns(market.benchmarks_base, portfolio.dates))
     assert list(cmp.index)[0] == "Portfel" and {"WIG20", "WIG", "SP500", "MSCIW"} <= set(cmp.index)
 
 

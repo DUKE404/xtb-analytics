@@ -247,11 +247,16 @@ def exposure_by(exposure: pd.Series, meta: pd.DataFrame, column: str, equity: fl
     return out.sort_values("gross", ascending=False)
 
 
-def currency_exposure(value: pd.Series, meta: pd.DataFrame, cash: float, equity: float) -> pd.DataFrame:
-    """Co faktycznie zależy od kursu waluty: wartość akcji/ETF i niezrealizowany wynik CFD + gotówka w PLN."""
-    cur = meta["currency"].reindex(value.index).fillna("PLN")
+def currency_exposure(value: pd.Series, meta: pd.DataFrame, cash, equity: float, base: str = "PLN") -> pd.DataFrame:
+    """Co faktycznie zależy od kursu waluty: wartość akcji/ETF i niezrealizowany wynik CFD + gotówka.
+
+    `cash`: liczba (gotówka w walucie bazowej) albo słownik/Series waluta -> kwota (już w walucie bazowej).
+    """
+    cur = meta["currency"].reindex(value.index).fillna(base)
     s = value.groupby(cur.values).sum()
-    s.loc["PLN"] = s.get("PLN", 0.0) + cash
+    parts = {base: float(cash)} if np.isscalar(cash) else {str(k): float(v) for k, v in dict(cash).items()}
+    for c, v in parts.items():
+        s.loc[c] = s.get(c, 0.0) + v
     out = pd.DataFrame({"value": s, "share": s / equity if equity else np.nan})
     out.index.name = "currency"
     return out.sort_values("value", ascending=False)

@@ -63,8 +63,11 @@ def decompose(pf: Portfolio, cash: pd.DataFrame | None = None, start=None, end=N
     out["other"] = out["pnl"] - out["price_effect"] - out["fx_effect"] - out["income"]
     for bucket in (CASH_BUCKET, OTHER_BUCKET):
         v = float(pnl.get(bucket, 0.0))
-        if abs(v) > 1e-9:
-            out.loc[bucket] = {"pnl": v, "price_effect": 0.0, "fx_effect": 0.0, "income": 0.0, "other": v}
+        fxv = 0.0
+        if bucket == CASH_BUCKET and getattr(pf, "cash_fx_pnl", None) is not None:
+            fxv = float(pf.cash_fx_pnl.loc[sl].values.sum())    # przeliczenie gotówki trzymanej w obcej walucie
+        if abs(v) > 1e-9 or abs(fxv) > 1e-9:
+            out.loc[bucket] = {"pnl": v, "price_effect": 0.0, "fx_effect": fxv, "income": 0.0, "other": v - fxv}
 
     if start is None and end is None:
         contrib = linked_contributions(pf)
@@ -82,7 +85,7 @@ def decompose(pf: Portfolio, cash: pd.DataFrame | None = None, start=None, end=N
     out["name"] = [LABELS.get(i, meta.at[i, "name"] if i in pf.meta.index else i) for i in out.index]
     out["sector"] = meta["sector"].fillna("Gotówka i inne").values
     out["country"] = meta["country"].fillna("Gotówka i inne").values
-    out["currency"] = meta["currency"].fillna("PLN").values
+    out["currency"] = meta["currency"].fillna(pf.base).values
     out["asset_class"] = meta["asset_class"].fillna("Gotówka").values
     return out.sort_values("pnl", ascending=False)
 
@@ -92,6 +95,9 @@ def by_group(attr: pd.DataFrame, column: str) -> pd.DataFrame:
     return attr.groupby(column)[cols].sum().sort_values("pnl", ascending=False)
 
 
-def fx_effect_by_currency(attr: pd.DataFrame) -> pd.Series:
-    s = attr.groupby("currency")["fx_effect"].sum()
-    return s[s.index != "PLN"].sort_values()
+def fx_effect_by_currency(attr: pd.DataFrame, base: str = "PLN", cash_fx: pd.Series | None = None) -> pd.Series:
+    """Efekt walutowy per waluta; `cash_fx` (waluta -> kwota) to przeliczenie gotówki trzymanej w obcej walucie."""
+    s = attr[~attr.index.isin([CASH_BUCKET, OTHER_BUCKET])].groupby("currency")["fx_effect"].sum()
+    if cash_fx is not None:
+        s = s.add(pd.Series(cash_fx, dtype=float), fill_value=0.0)
+    return s[(s.index != base) & (s.abs() > 1e-9)].sort_values()

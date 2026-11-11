@@ -21,14 +21,16 @@ from flask import Flask, Response, request, send_from_directory
 from werkzeug.exceptions import HTTPException
 
 from data.xtb_parser import XTBFormatError
+from server import blocks as B
 from server.blocks import jsonable
+from data.loader import BASE_CHOICES
 from server.context import BENCH_CHOICES, DEFAULT_BENCH, DEFAULT_RF, build_context
 from server.screens import SCREENS, Params, nav_config
 from server.sessions import SessionStore
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB_DIR = os.path.join(ROOT, "web")
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 MAX_UPLOAD_MB = 40
 
 
@@ -83,12 +85,16 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
             "equity": float(pf.equity.iloc[-1]), "mapping": ctx.mapping.to_dict("records"),
             "unmapped": [s for s in ctx.mapping.loc[(ctx.mapping["yf_ticker"] == "") & (ctx.mapping["stooq_ticker"] == ""), "symbol"]],
             "price_sources": getattr(ctx.provider, "sources", {}),
+            "base": ctx.base, "base_choices": BASE_CHOICES,
+            "accounts": [{k: a[k] for k in ("id", "currency", "closed", "open", "cash", "as_of", "selected", "files")}
+                         for a in ctx.accounts],
+            "files_used": sorted({f for a in ctx.accounts for f in a.get("files", [])}),
         }
 
-    def make_ctx(files, overrides):
+    def make_ctx(files, overrides, base="PLN", accounts=None, parsed=None, exclude=None):
         provider = provider_factory(files is None) if provider_factory else None
         try:
-            return build_context(files, overrides, provider)
+            return build_context(files, overrides, provider, base=base, accounts=accounts, parsed=parsed, exclude=exclude)
         except XTBFormatError as exc:
             raise ApiError(str(exc), 422, "bad_format") from exc
         except ValueError as exc:
@@ -172,7 +178,7 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
             files = [(n, b) for n, b in files if b]
             if not files:
                 raise ApiError("Nie wybrano pliku. Wgraj eksport z xStation 5 (.xlsx lub .csv).", 400, "no_file")
-        ctx = make_ctx(files, overrides)
+        ctx = make_ctx(files, overrides, _base(request.form.get("base")), exclude=_accounts(request.form.get("exclude")))
         sid = sessions.put(ctx)
         return ok(session_meta(sid, ctx), 201)
 
@@ -192,7 +198,25 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
         body = request.get_json(silent=True) or {}
         rows = body.get("mapping") or []
         overrides = pd.DataFrame(rows) if rows else None
-        ctx = make_ctx(None if old.is_demo else old.files, overrides)
+        ctx = make_ctx(None if old.is_demo else old.files, overrides, old.base,
+                       [a["id"] for a in old.accounts if a["selected"]], old.parsed)
+        sessions.put(ctx, sid)
+        return ok(session_meta(sid, ctx))
+
+    @app.put("/api/session/<sid>/view")
+    def update_view(sid):
+        """Zmiana waluty wyświetlania albo zaznaczonych rachunków -> przeliczenie w tej samej sesji."""
+        old = get_ctx(sid)
+        body = request.get_json(silent=True) or {}
+        base = _base(body.get("base")) if body.get("base") else old.base
+        accounts = body.get("accounts")
+        if isinstance(accounts, list):
+            accounts = [str(a) for a in accounts]
+            if not accounts:
+                raise ApiError("Zaznacz przynajmniej jeden rachunek.", 400, "no_account")
+        else:
+            accounts = [a["id"] for a in old.accounts if a["selected"]]
+        ctx = make_ctx(None if old.is_demo else old.files, old.overrides, base, accounts, old.parsed)
         sessions.put(ctx, sid)
         return ok(session_meta(sid, ctx))
 
@@ -206,7 +230,9 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
         if request.method == "POST":
             raw.update(request.get_json(silent=True) or {})
         t0 = time.time()
+        B.set_currency(ctx.base)
         out = fn(ctx, Params(raw))
+        out["currency"] = ctx.base
         out["ms"] = int((time.time() - t0) * 1000)
         return ok(out)
 
@@ -217,6 +243,7 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
         if not ai.enabled():
             raise ApiError("Dział AI jest wyłączony - na serwerze nie ustawiono ANTHROPIC_API_KEY.", 404, "ai_disabled")
         ctx = get_ctx(sid)
+        B.set_currency(ctx.base)
         body = request.get_json(silent=True) or {}
         p = Params({**dict(request.args), **{k: v for k, v in body.items() if k in ("rf", "bench")}})
         return ctx.memo(("ai_payload", round(p.rf, 4), p.bench), lambda: builder.build(ctx, p.rf, p.bench)), body
@@ -294,8 +321,24 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
 
 
 def _bench_label(key: str) -> str:
-    from data.providers import BENCHMARK_LABELS
-    return BENCHMARK_LABELS.get(key, key)
+    from data.providers import BENCHMARK_NAMES
+    return BENCHMARK_NAMES.get(key, key)
+
+
+def _base(raw) -> str:
+    code = str(raw or "PLN").upper()
+    return code if code in BASE_CHOICES else "PLN"
+
+
+def _accounts(raw: str | None) -> list[str] | None:
+    """Lista numerów rachunków do wliczenia (JSON); brak albo błąd = wszystkie."""
+    if not raw:
+        return None
+    try:
+        rows = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return [str(a) for a in rows] if isinstance(rows, list) and rows else None
 
 
 def _overrides(raw: str | None) -> pd.DataFrame | None:

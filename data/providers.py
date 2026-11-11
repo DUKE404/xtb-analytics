@@ -30,6 +30,16 @@ BENCHMARKS = {
     "GOLD": ("GC=F", "xauusd", "USD"),
     "OIL": ("BZ=F", "cb.f", "USD"),
 }
+BENCHMARK_NAMES = {"WIG20": "WIG20", "WIG": "WIG", "SP500": "S&P 500", "MSCIW": "MSCI World ETF", "NDX": "Nasdaq 100",
+                   "DAX": "DAX", "GOLD": "Złoto", "OIL": "Ropa Brent"}
+
+
+def benchmark_label(key: str, base: str = "PLN", currency: str | None = None) -> str:
+    """Nazwa benchmarku z dopiskiem waluty, gdy został przeliczony (np. "S&P 500 (w PLN)")."""
+    name = BENCHMARK_NAMES.get(key, key)
+    return name if currency in (None, base) else f"{name} (w {base})"
+
+
 BENCHMARK_LABELS = {"WIG20": "WIG20", "WIG": "WIG", "SP500": "S&P 500 (w PLN)", "MSCIW": "MSCI World ETF (w PLN)",
                     "NDX": "Nasdaq 100 (w PLN)", "DAX": "DAX (w PLN)", "GOLD": "Złoto (w PLN)", "OIL": "Ropa Brent (w PLN)"}
 

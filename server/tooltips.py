@@ -3,8 +3,8 @@
 TOOLTIPS = {
     # --- Przegląd
     "Wartość portfela": "Ile dziś warte jest wszystko na rachunku: gotówka + akcje i ETF-y po bieżących cenach "
-                        "+ niezrealizowany wynik na CFD. W złotych.",
-    "Wynik całkowity": "Ile zarobiłeś lub straciłeś w złotych od początku: obecna wartość portfela minus suma wpłat "
+                        "+ niezrealizowany wynik na CFD. W walucie wyświetlania wybranej na pasku u góry.",
+    "Wynik całkowity": "Ile zarobiłeś lub straciłeś od początku (w walucie wyświetlania): obecna wartość portfela minus suma wpłat "
                        "plus suma wypłat. Uwzględnia dywidendy, prowizje, swapy i kursy walut.",
     "Wpłaty netto": "Suma wszystkich wpłat na rachunek minus wypłaty. To Twój własny kapitał włożony w portfel.",
     "Stopa zwrotu (TWR)": "Stopa zwrotu ważona czasem. Pokazuje, jak radziły sobie Twoje decyzje inwestycyjne, "
@@ -41,7 +41,7 @@ TOOLTIPS = {
     "Dni na plusie": "Odsetek dni, w których portfel zamknął się wyżej niż dzień wcześniej.",
     # --- Ryzyko
     "VaR": "Value at Risk: strata, której przy danym poziomie ufności nie powinieneś przekroczyć w danym horyzoncie. "
-           "VaR 95% 1 dzień = 2 000 zł znaczy: w 19 dni na 20 strata będzie mniejsza niż 2 000 zł. Nie mówi, jak źle "
+           "VaR 95% 1 dzień = 2 000 znaczy: w 19 dni na 20 strata będzie mniejsza niż 2 000. Nie mówi, jak źle "
            "bywa w tym jednym dniu z dwudziestu.",
     "CVaR": "Średnia strata w tych najgorszych dniach, które wypadają poza VaR. Odpowiada na pytanie: 'jeśli już jest "
             "źle, to jak bardzo?'. Zawsze większa niż VaR.",
@@ -70,7 +70,7 @@ TOOLTIPS = {
                                 "zaczął je zamykać. Liczone ostrożnie: zabezpieczeniem jest tylko gotówka i wynik na CFD.",
     "Roczny koszt swapów": "Ile w skali roku kosztuje utrzymywanie otwartych pozycji CFD przez noc (punkty swapowe), "
                            "jako procent ich wartości nominalnej.",
-    "Ekspozycja walutowa": "Jaka część portfela zmienia wartość razem z kursem danej waluty do złotego.",
+    "Ekspozycja walutowa": "Jaka część portfela zmienia wartość razem z kursem danej waluty (wobec waluty wyświetlania).",
     "R²": "Jaka część wahań portfela jest wyjaśniona przez czynniki w modelu. 0,8 = 80% zachowania portfela to "
           "znane czynniki rynkowe, reszta to specyfika Twoich spółek.",
     # --- Symulacje

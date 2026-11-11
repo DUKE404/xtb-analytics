@@ -56,6 +56,8 @@ def equity_factor(symbol: str, row) -> str:
     if "złot" in low:
         return "GOLD"
     if "etf" in low:
+        if any(k in low for k in ("technolog", "półprzewod", "nasdaq")):
+            return "NDX"
         if "usa" in low:
             return "SP500"
         if "polsk" in low:
@@ -70,19 +72,41 @@ def equity_factor(symbol: str, row) -> str:
     return "WORLD"
 
 
-def fx_factor(row) -> str:
-    """Czynnik walutowy pozycji; pusty napis = brak ryzyka walutowego."""
-    if str(row.get("asset_class", "STOCK")) == "CFD":
-        return ""                         # nominał CFD nie niesie ryzyka walutowego
-    cur = str(row.get("currency", "PLN"))
+def _pln_factor(cur: str) -> str:
+    """Czynnik opisujący kurs waluty do złotego ("" dla PLN)."""
     if cur == "PLN":
         return ""
     return "USDPLN" if cur == "USD" else "EURPLN"   # pozostałe waluty europejskie przybliżamy euro
 
 
-def factor_map(meta: pd.DataFrame, symbols) -> pd.DataFrame:
+def fx_shock(cur: str, base: str, shocks: dict) -> float:
+    """Zmiana kursu waluty `cur` wyrażonego w walucie bazowej, złożona z szoków kursów do złotego.
+
+    Np. baza USD, pozycja w PLN, USD/PLN +15%: złoty tanieje wobec dolara o 1/1,15 - 1 = -13%.
+    """
+    if cur == base:
+        return 0.0
+    c, b = _pln_factor(cur), _pln_factor(base)
+    if c == b:
+        return 0.0
+    up = 1.0 + (float(shocks.get(c, 0.0)) if c else 0.0)
+    down = 1.0 + (float(shocks.get(b, 0.0)) if b else 0.0)
+    return up / down - 1.0 if down > 0 else 0.0
+
+
+def fx_factor(row, base: str = "PLN") -> str:
+    """Czynnik walutowy pozycji; pusty napis = brak ryzyka walutowego."""
+    if str(row.get("asset_class", "STOCK")) == "CFD":
+        return ""                         # nominał CFD nie niesie ryzyka walutowego
+    cur = str(row.get("currency", "PLN"))
+    if cur == base or _pln_factor(cur) == _pln_factor(base):
+        return ""
+    return f"{cur}/{base}" if base != "PLN" else _pln_factor(cur)
+
+
+def factor_map(meta: pd.DataFrame, symbols, base: str = "PLN") -> pd.DataFrame:
     rows = {s: {"eq_factor": equity_factor(s, meta.loc[s]) if s in meta.index else "WORLD",
-                "fx_factor": fx_factor(meta.loc[s]) if s in meta.index else ""} for s in symbols}
+                "fx_factor": fx_factor(meta.loc[s], base) if s in meta.index else ""} for s in symbols}
     return pd.DataFrame.from_dict(rows, orient="index", columns=["eq_factor", "fx_factor"])
 
 
@@ -102,28 +126,43 @@ def estimate_betas(asset_local_returns: pd.DataFrame, proxy_returns: pd.DataFram
     return pd.Series(out, dtype=float)
 
 
-def apply_scenario(exposure: pd.Series, meta: pd.DataFrame, shocks: dict, betas: pd.Series | None = None) -> pd.DataFrame:
-    """Wynik każdej pozycji w scenariuszu. `shocks`: czynnik -> zmiana (ułamek, np. -0.25)."""
-    fmap = factor_map(meta, exposure.index)
+CASH_FACTOR = "CASH"
+
+
+def apply_scenario(exposure: pd.Series, meta: pd.DataFrame, shocks: dict, betas: pd.Series | None = None,
+                   base: str = "PLN", cash: dict | None = None) -> pd.DataFrame:
+    """Wynik każdej pozycji w scenariuszu. `shocks`: czynnik -> zmiana (ułamek, np. -0.25).
+
+    `base` - waluta, w której liczony jest wynik; `cash` - gotówka per waluta (kwoty już w walucie bazowej):
+    gotówka w walucie innej niż bazowa zmienia wartość razem z kursem.
+    """
+    fmap = factor_map(meta, exposure.index, base)
     rows = []
     for sym, e in exposure.items():
         eqf, fxf = fmap.at[sym, "eq_factor"], fmap.at[sym, "fx_factor"]
         beta = float(betas.get(sym, 1.0)) if betas is not None else 1.0
         eq = max(beta * float(shocks.get(eqf, 0.0)), -1.0) if eqf else 0.0
-        fx = float(shocks.get(fxf, 0.0)) if fxf else 0.0
+        fx = fx_shock(str(meta.at[sym, "currency"]), base, shocks) if fxf and sym in meta.index else 0.0
         is_cfd = sym in meta.index and meta.at[sym, "asset_class"] == "CFD"
         change = eq if is_cfd else (1.0 + eq) * (1.0 + fx) - 1.0
         rows.append({"symbol": sym, "exposure": float(e), "eq_factor": eqf, "fx_factor": fxf, "beta": beta,
                      "eq_shock": eq, "fx_shock": fx, "change": change, "pnl": float(e) * change})
+    for cur, amount in (cash or {}).items():
+        fx = fx_shock(str(cur), base, shocks)
+        if cur == base or not amount or (fx == 0.0 and _pln_factor(str(cur)) == _pln_factor(base)):
+            continue
+        rows.append({"symbol": f"Gotówka {cur}", "exposure": float(amount), "eq_factor": CASH_FACTOR,
+                     "fx_factor": f"{cur}/{base}", "beta": np.nan, "eq_shock": 0.0, "fx_shock": fx, "change": fx,
+                     "pnl": float(amount) * fx})
     return pd.DataFrame(rows).set_index("symbol") if rows else pd.DataFrame(
         columns=["exposure", "eq_factor", "fx_factor", "beta", "eq_shock", "fx_shock", "change", "pnl"])
 
 
 def run_scenarios(exposure: pd.Series, meta: pd.DataFrame, equity: float, scenarios: dict,
-                  betas: pd.Series | None = None) -> pd.DataFrame:
-    """scenarios: nazwa -> {czynnik: szok}. Zwraca wynik w PLN i jako % kapitału."""
+                  betas: pd.Series | None = None, base: str = "PLN", cash: dict | None = None) -> pd.DataFrame:
+    """scenarios: nazwa -> {czynnik: szok}. Zwraca wynik w walucie bazowej i jako % kapitału."""
     rows = {}
     for name, shocks in scenarios.items():
-        pnl = float(apply_scenario(exposure, meta, shocks, betas)["pnl"].sum())
+        pnl = float(apply_scenario(exposure, meta, shocks, betas, base, cash)["pnl"].sum())
         rows[name] = {"pnl": pnl, "pct": pnl / equity if equity else np.nan}
     return pd.DataFrame.from_dict(rows, orient="index", columns=["pnl", "pct"])

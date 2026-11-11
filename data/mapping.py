@@ -84,12 +84,31 @@ KNOWN: dict[str, tuple] = {
     "JPM.US": ("JPMorgan Chase", S, "Finanse", "USA"),
     "V.US": ("Visa", S, "Finanse", "USA"),
     "BRKB.US": ("Berkshire Hathaway B", S, "Finanse", "USA", {"yf_ticker": "BRK-B", "stooq_ticker": "brk-b.us"}),
+    "GOOGC.US": ("Alphabet (klasa C)", S, "Telekomunikacja", "USA", {"yf_ticker": "GOOG", "stooq_ticker": "goog.us"}),
+    "ORCL.US": ("Oracle", S, "Technologia", "USA"),
+    "SOFI.US": ("SoFi", S, "Finanse", "USA"),
+    "PGY.US": ("Pagaya Technologies", S, "Finanse", "USA"),
+    "ROOT.US": ("Root", S, "Finanse", "USA"),
+    "ACHR.US": ("Archer Aviation", S, "Przemysł", "USA"),
+    "NVO.US": ("Novo Nordisk (ADR)", S, "Ochrona zdrowia", "Dania"),
+    "ASML.NL": ("ASML", S, "Technologia", "Holandia"),
+    "SNOW.US": ("Snowflake", S, "Technologia", "USA"),
+    "NOW.US": ("ServiceNow", S, "Technologia", "USA"),
+    "S.US": ("SentinelOne", S, "Technologia", "USA"),
+    "UBER.US": ("Uber", S, "Technologia", "USA"),
+    "NBIS.US": ("Nebius Group", S, "Technologia", "USA"),
+    "IREN.US": ("IREN", S, "Technologia", "USA"),
+    "RKLB.US": ("Rocket Lab", S, "Przemysł", "USA"),
+    "SPCX.US": ("SpaceX", S, "Przemysł", "USA"),
+    "VST.US": ("Vistra Energy", S, "Użyteczność publiczna", "USA"),
     # --- ETF
     "CSPX.UK": ("iShares Core S&P 500 UCITS (Acc)", E, "ETF akcji USA", "USA",
                 {"yf_ticker": "CSPX.L", "stooq_ticker": "cspx.uk", "currency": "USD", "price_factor": 1.0}),
     "IWDA.UK": ("iShares Core MSCI World UCITS (Acc)", E, "ETF akcji globalnych", "Świat",
                 {"yf_ticker": "IWDA.L", "stooq_ticker": "iwda.uk", "currency": "USD", "price_factor": 1.0}),
     "VUSA.UK": ("Vanguard S&P 500 UCITS (Dist)", E, "ETF akcji USA", "USA", {"price_factor": 1.0}),
+    "SMH.UK": ("VanEck Semiconductor UCITS", E, "ETF technologiczny (półprzewodniki)", "Świat",
+               {"yf_ticker": "SMH.L", "stooq_ticker": "smh.uk", "currency": "USD", "price_factor": 1.0}),
     "EUNL.DE": ("iShares Core MSCI World UCITS (Acc)", E, "ETF akcji globalnych", "Świat"),
     "VWCE.DE": ("Vanguard FTSE All-World UCITS (Acc)", E, "ETF akcji globalnych", "Świat"),
     "SXR8.DE": ("iShares Core S&P 500 UCITS (Acc)", E, "ETF akcji USA", "USA"),
@@ -208,9 +227,39 @@ def normalize_mapping(df: pd.DataFrame) -> pd.DataFrame:
     return out.drop_duplicates("symbol", keep="last").reset_index(drop=True)
 
 
-def build_mapping(symbols, overrides: pd.DataFrame | None = None) -> pd.DataFrame:
-    """Tabela mapowań dla listy symboli XTB; `overrides` (np. poprawki z UI) nadpisują reguły."""
-    rows = {s: auto_map(s) for s in sorted({str(s).strip().upper() for s in symbols if str(s).strip()})}
+def apply_hints(row: dict, hint: dict | None) -> dict:
+    """Uzupełnia wiersz mapowania tym, co raport XTB sam podaje o instrumencie (nazwa, kategoria, waluta)."""
+    if not hint:
+        return row
+    base = re.sub(r"_\d$", "", row["symbol"])
+    if hint.get("name") and row["name"] in (row["symbol"], base):
+        row["name"] = str(hint["name"])
+    if base in KNOWN or base in CFD_KNOWN:
+        return row                                  # wbudowana wiedza o instrumencie ma pierwszeństwo
+    cat = str(hint.get("category", "")).upper()
+    if cat in ("STOCK", "ETF"):
+        row["asset_class"] = cat
+        if cat == "ETF":
+            row["spread_bps"] = DEFAULT_SPREAD_BPS["ETF"]
+            if row["sector"] == "Nieznany":
+                row["sector"] = "ETF"
+    elif cat:
+        row["asset_class"] = C
+        if row["margin_rate"] >= 1.0:
+            row["margin_rate"] = 0.20
+    if hint.get("currency") and row["asset_class"] != C:
+        # wartości w raporcie zgadzają się 1:1 z ceną x ilość, więc instrument jest notowany w walucie rachunku
+        if row["currency"] != hint["currency"]:
+            row["currency"] = hint["currency"]
+        row["price_factor"] = 1.0
+    return row
+
+
+def build_mapping(symbols, overrides: pd.DataFrame | None = None, hints: dict | None = None) -> pd.DataFrame:
+    """Tabela mapowań dla listy symboli XTB. Kolejność ważności: poprawki użytkownika (`overrides`),
+    wbudowana tabela znanych instrumentów, podpowiedzi z raportu (`hints`), reguły wg sufiksu giełdy."""
+    rows = {s: apply_hints(auto_map(s), (hints or {}).get(s))
+            for s in sorted({str(s).strip().upper() for s in symbols if str(s).strip()})}
     if overrides is not None and len(overrides):
         for rec in overrides.to_dict("records"):
             sym = str(rec.get("symbol", "")).strip().upper()

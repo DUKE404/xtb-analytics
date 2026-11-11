@@ -2,7 +2,7 @@
 
 import * as api from "./api.js";
 import { renderScreen } from "./blocks.js";
-import { aiView, errorNote, resetChat, importView, loginView, mappingView, moreView, settingsView } from "./client.js";
+import { aiView, errorNote, resetChat, importView, loginView, mappingView, moreView, settingsView, viewSheet } from "./client.js";
 import { el, fmtDate } from "./format.js";
 
 const $ = (id) => document.getElementById(id);
@@ -75,8 +75,12 @@ function drawBar(titleText) {
   const s = api.state.session;
   barMeta.replaceChildren();
   if (!s) return;
-  barMeta.append(el("div", {}, `stan na ${fmtDate(s.as_of)}`));
-  if (s.is_demo) barMeta.append(el("div", { class: "demo" }, "dane przykładowe"));
+  const accounts = s.accounts || [];
+  const chosen = accounts.filter((a) => a.selected).length;
+  const what = accounts.length > 1 ? `${chosen} z ${accounts.length} rachunków · ${s.base}` : s.base;
+  const pick = el("button", { class: "view-btn", type: "button", "aria-label": `Rachunki i waluta wyświetlania: ${what}` }, what);
+  pick.addEventListener("click", () => viewSheet(reloadAll));
+  barMeta.append(pick, el("div", { class: s.is_demo ? "demo" : null }, s.is_demo ? "dane przykładowe" : `stan na ${fmtDate(s.as_of)}`));
 }
 
 function skeleton() {

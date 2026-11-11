@@ -1,7 +1,7 @@
 // Service worker: trzyma powłokę aplikacji w telefonie, żeby otwierała się natychmiast -
 // także wtedy, gdy darmowy serwer dopiero się budzi. Dane z /api nigdy nie są cache'owane.
 
-const VERSION = "v1";
+const VERSION = "v2";
 const CACHE = `xtb-analytics-${VERSION}`;
 const SHELL = [
   "/", "/css/app.css", "/js/app.js", "/js/api.js", "/js/blocks.js", "/js/charts.js", "/js/client.js",

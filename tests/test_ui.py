@@ -65,11 +65,11 @@ def wait_ready(pg):
     pg.wait_for_timeout(150)   # wykresy rysują się w następnej klatce
 
 
-def shot(pg, name):
+def shot(pg, name, full=True):
     out = os.environ.get("UI_SHOTS")
     if out:
         os.makedirs(out, exist_ok=True)
-        pg.screenshot(path=os.path.join(out, f"{name}.png"), full_page=True)
+        pg.screenshot(path=os.path.join(out, f"{name}.png"), full_page=full)
 
 
 def nav_from_health(pg, base_url):
@@ -176,6 +176,61 @@ def test_upload_of_real_file_from_phone(page, base_url, sample_path):
     wait_ready(page)
     assert "dane przykładowe" not in page.inner_text("#bar-meta")
     assert "19 dni na 20" in page.inner_text(".statement")
+    assert not page.errors, page.errors
+
+
+def _write(tmp_path, pair):
+    path = tmp_path / pair[0]
+    path.write_bytes(pair[1])
+    return str(path)
+
+
+def test_two_accounts_selection_and_display_currency(page, base_url, tmp_path):
+    """Rachunek PLN i USD w prawdziwym układzie eksportu: dogrywanie, odznaczanie rachunku, przełączanie waluty."""
+    from tests import real_layout as R
+
+    page.goto(base_url + "/#/import/import")
+    page.wait_for_selector(".drop input")
+    page.set_input_files(".drop input", _write(tmp_path, R.usd_account()))
+    page.wait_for_function("document.querySelector('.statement')?.textContent.includes('własny eksport')", timeout=90000)
+    assert page.inner_text("#bar-meta .view-btn") == "PLN"
+    # drugi rachunek dogrywa się do pierwszego, nie zastępuje go
+    page.set_input_files(".drop input", _write(tmp_path, R.pln_account()))
+    page.wait_for_function("document.querySelector('#bar-meta .view-btn')?.textContent.includes('2 z 2')", timeout=90000)
+    assert page.locator(".ledger .link-btn").count() == 2
+    shot(page, "95-two-accounts-import")
+
+    page.goto(base_url + "/#/overview")
+    wait_ready(page)
+    assert "zł" in page.inner_text(".statement")
+    page.locator("#bar-meta .view-btn").tap()
+    page.wait_for_selector(".sheet")
+    assert page.locator(".sheet .toggle input").count() == 2
+    shot(page, "96-view-sheet", full=False)
+    page.locator(".sheet .segmented button", has_text="USD").tap()
+    page.locator(".sheet .toggle input").first.uncheck()               # odznacz rachunek PLN
+    page.locator(".sheet .btn", has_text="Zastosuj").tap()
+    page.wait_for_selector(".sheet", state="detached", timeout=90000)
+    wait_ready(page)
+    assert "1 z 2 rachunków · USD" in page.inner_text("#bar-meta .view-btn")
+    text = page.inner_text("main")
+    assert "$" in text and "zł" not in text
+    shot(page, "97-overview-usd")
+
+    # wybór przeżywa odświeżenie strony (pliki i ustawienia są w telefonie)
+    page.reload()
+    wait_ready(page)
+    assert "1 z 2 rachunków · USD" in page.inner_text("#bar-meta .view-btn")
+    # podatki zostają w złotych
+    page.goto(base_url + "/#/tax")
+    wait_ready(page)
+    assert "zł" in page.inner_text("main")
+    # nie da się odznaczyć wszystkiego
+    page.locator("#bar-meta .view-btn").tap()
+    page.wait_for_selector(".sheet")
+    page.locator(".sheet .toggle input").nth(1).uncheck()
+    page.locator(".sheet .btn", has_text="Zastosuj").tap()
+    page.wait_for_selector(".sheet .note.warn")
     assert not page.errors, page.errors
 
 

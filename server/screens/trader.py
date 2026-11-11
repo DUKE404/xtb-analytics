@@ -6,7 +6,6 @@ import pandas as pd
 
 from core import performance as perf
 from core import regimes, trader
-from data.providers import BENCHMARK_LABELS
 from server import blocks as B
 
 SCOPES = [("all", "Wszystko"), ("cfd", "CFD"), ("stock", "Akcje i ETF")]
@@ -216,7 +215,7 @@ def sizing(ctx, p) -> dict:
 def costs(ctx, p) -> dict:
     pf, exp = ctx.pf, ctx.export
     t = _trades(ctx)
-    c = trader.cost_breakdown(t, exp.open, exp.cash, pf.meta, ctx.market.fx)
+    c = trader.cost_breakdown(t, exp.open, exp.cash, pf.meta, ctx.market.fx, account_currencies=ctx.account_currencies)
     years = max(len(pf.dates) / 252.0, 1e-9)
     ratios = trader.cost_ratios(c["total"], pf.total_pnl(), float(pf.equity.mean()), years)
     items = pd.Series(c["items"]).sort_values(ascending=False)
@@ -248,8 +247,9 @@ def costs(ctx, p) -> dict:
         "**Prowizje i swapy** pochodzą wprost z raportu XTB.",
         "**Spread** to szacunek: połowa spreadu z tabeli tickerów (kolumna spread, w punktach bazowych) od wartości każdego "
         "kupna i sprzedaży. Jest już zawarty w cenach transakcji, więc nie odejmuj go drugi raz od wyniku.",
-        "**Przewalutowanie** to szacunek 0,5% od wartości kupna i sprzedaży akcji i ETF-ów w walucie obcej na rachunku "
-        "w PLN. Też jest już zawarte w wyniku. Sprawdź aktualną stawkę w tabeli opłat XTB.",
+        "**Przewalutowanie** to szacunek 0,5% od wartości kupna i sprzedaży akcji i ETF-ów w walucie, w której nie masz "
+        f"rachunku (Twoje rachunki: {', '.join(ctx.account_currencies)}). Też jest już zawarte w wyniku. Wymiana przy przelewie "
+        "między własnymi rachunkami trafia do pozycji „gotówka” w atrybucji. Sprawdź aktualną stawkę w tabeli opłat XTB.",
     ], "Skąd te liczby"))
     return {"title": "Koszty", "blocks": blocks}
 
@@ -264,7 +264,7 @@ def regime_screen(ctx, p) -> dict:
                       "rynek jest nerwowy, gdy jego zmienność z 21 sesji jest wysoka na tle historii."),
         B.control("states", "segmented", "Liczba reżimów", k, [(2, "2"), (3, "3")]),
     ])
-    levels = ctx.market.benchmarks_pln.get(p.bench)
+    levels = ctx.market.benchmarks_base.get(p.bench)
     if levels is None or levels.dropna().empty:
         return {"title": "Reżimy", "blocks": [ctl, B.note("Brak notowań benchmarku do wyznaczenia reżimów rynku.", "warn")]}
     bench_full = levels.dropna().pct_change().dropna()
@@ -279,7 +279,7 @@ def regime_screen(ctx, p) -> dict:
     labels = regimes.LABELS[k]
     now = labels[int(states.iloc[-1])]
     calm, nervous = port.iloc[0], port.iloc[-1]
-    idx = perf.twr_index(ctx.bench_series(p.bench)).to_frame(BENCHMARK_LABELS.get(p.bench, p.bench))
+    idx = perf.twr_index(ctx.bench_series(p.bench)).to_frame(ctx.bench_label(p.bench))
     spec = B.line(idx, "num", 0, max_points=5000)
     spec["spans"] = [list(s) for s in regimes.spans(states, k - 1)]
     tab = port.reset_index().merge(bench.reset_index()[["regime", "ann_return", "volatility"]], on="regime", suffixes=("", "_b"))
@@ -291,7 +291,7 @@ def regime_screen(ctx, p) -> dict:
         ctl,
         B.statement(f"W nerwowym rynku portfel {describe(nervous)}, w spokojnym {describe(calm)}.",
                     f"Dziś rynek jest w reżimie: {now}. Nerwowy rynek to {B.f_pct(nervous['share'], 0)} dni w Twojej historii."),
-        B.chart(spec, f"{BENCHMARK_LABELS.get(p.bench, p.bench)}: zacieniowane okresy nerwowego rynku",
+        B.chart(spec, f"{ctx.bench_label(p.bench)}: zacieniowane okresy nerwowego rynku",
                 "Reżimy wyznaczam na benchmarku wybranym w ustawieniach, na całej dostępnej historii notowań."),
         B.table(tab, [("regime", "Reżim", "text"), ("share", "Udział dni", "pct", 0), ("ann_return", "Portfel rocznie", "pct", 1),
                       ("volatility", "Zmienność portfela", "pct", 1), ("sharpe", "Sharpe", "num", 2),

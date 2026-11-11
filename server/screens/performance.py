@@ -5,7 +5,6 @@ import pandas as pd
 
 from core import attribution as attr
 from core import performance as perf
-from data.providers import BENCHMARK_LABELS
 from server import blocks as B
 
 PERIODS = [("all", "Cały okres"), ("ytd", "Ten rok"), ("12m", "12 miesięcy")]
@@ -72,7 +71,7 @@ def summary(ctx, p) -> dict:
             B.metric("Information ratio", s["information_ratio"]),
             B.metric("Skośność", s["skew"]),
             B.metric("Kurtoza", s["kurtosis"]),
-        ], f"Względem benchmarku: {BENCHMARK_LABELS.get(p.bench, p.bench)}"),
+        ], f"Względem benchmarku: {ctx.bench_label(p.bench)}"),
     ]
     if s["n_days"] < 500:
         blocks.append(B.note("Przy historii krótszej niż ok. 2 lata Sharpe, alfa i information ratio mają dużą "
@@ -87,17 +86,17 @@ def benchmarks(ctx, p) -> dict:
     b = ctx.bench_returns().loc[r.index[0]:]
     curves = pd.DataFrame({"Portfel": perf.twr_index(r)})
     for k in b.columns:
-        curves[BENCHMARK_LABELS.get(k, k)] = perf.twr_index(b[k])
-    cmp = perf.comparison_table(r, b, p.rf).rename(index=BENCHMARK_LABELS).reset_index().rename(columns={"index": "name"})
+        curves[ctx.bench_label(k)] = perf.twr_index(b[k])
+    cmp = perf.comparison_table(r, b, p.rf).rename(index=ctx.bench_label).reset_index().rename(columns={"index": "name"})
     yr = pd.DataFrame({"Portfel": perf.yearly_returns(ctx.pf.returns)})
     full = ctx.bench_returns()
     for k in full.columns:
-        yr[BENCHMARK_LABELS.get(k, k)] = perf.yearly_returns(full[k])
+        yr[ctx.bench_label(k)] = perf.yearly_returns(full[k])
     blocks = [
         ctl,
         B.chart(B.line(curves, "num", 0), "Portfel a indeksy, start okresu = 100",
-                "Indeksy zagraniczne przeliczone na złote po kursie NBP, więc zawierają efekt walutowy. WIG jest "
-                "indeksem dochodowym (z dywidendami), WIG20 i S&P 500 cenowymi."),
+                f"Indeksy w innej walucie przeliczone na {_cur_name(ctx)} po kursach NBP, więc zawierają efekt walutowy. "
+                "WIG jest indeksem dochodowym (z dywidendami), WIG20 i S&P 500 cenowymi."),
         B.table(cmp, [("name", "Seria", "text"), ("Zwrot", "Zwrot", "pct", 1), ("CAGR", "CAGR", "pct", 1),
                       ("Zmienność", "Zmienność", "pct", 1), ("Sharpe", "Sharpe", "num", 2),
                       ("Max drawdown", "Max DD", "pct", 1)], title="Porównanie"),
@@ -130,6 +129,10 @@ def periods(ctx, p) -> dict:
     return {"title": "Miesiące", "blocks": blocks}
 
 
+def _cur_name(ctx) -> str:
+    return {"PLN": "złote", "USD": "dolary", "EUR": "euro"}.get(ctx.base, ctx.base)
+
+
 def attribution(ctx, p) -> dict:
     pf = ctx.pf
     period, ctl, start, _ = _slice(ctx, p)
@@ -138,7 +141,9 @@ def attribution(ctx, p) -> dict:
     pos = pos[~pos.index.duplicated()]
     show = pd.concat([pos.head(8), pos.tail(8)]) if len(pos) > 16 else pos
     show = show[~show.index.duplicated()]
-    fx = attr.fx_effect_by_currency(a).sort_values(ascending=False)
+    cash_fx = pf.cash_fx_pnl.loc[start:].sum() if pf.cash_fx_pnl is not None and start is not None else \
+        (pf.cash_fx_pnl.sum() if pf.cash_fx_pnl is not None else None)
+    fx = attr.fx_effect_by_currency(a, ctx.base, cash_fx).sort_values(ascending=False)
     blocks = [
         ctl,
         B.metrics([
@@ -146,8 +151,9 @@ def attribution(ctx, p) -> dict:
             B.metric("Efekt cen", float(a["price_effect"].sum()), "pln", sign=True,
                      tip="Ile dały same zmiany cen instrumentów, przy kursach walut zamrożonych z dnia poprzedniego."),
             B.metric("Efekt walutowy", float(a["fx_effect"].sum()), "pln", sign=True,
-                     tip="Część wyniku, która wynika wyłącznie ze zmiany kursów walut do złotego. Gdy złoty się umacnia, "
-                         "zagraniczne aktywa tracą w PLN, nawet jeśli ich ceny stoją."),
+                     tip=f"Część wyniku, która wynika wyłącznie ze zmiany kursów walut wobec waluty wyświetlania ({ctx.base}): "
+                         "akcji w innych walutach oraz gotówki na rachunku w innej walucie. Ceny mogą stać, a wynik "
+                         "i tak się zmienia."),
             B.metric("Dywidendy netto", float(a["income"].sum()), "pln", sign=True,
                      tip="Dywidendy po potrąceniu podatku u źródła."),
             B.metric("Koszty i pozostałe", float(a["other"].sum()), "pln", sign=True,

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-EXTERNAL_FLOW_KINDS = ("DEPOSIT", "WITHDRAWAL", "TRANSFER")
+EXTERNAL_FLOW_KINDS = ("DEPOSIT", "WITHDRAWAL", "TRANSFER")   # "INTERNAL" (przelew między własnymi rachunkami) nie jest przepływem
 CASH_BUCKET = "_GOTÓWKA"      # wynik bez przypisanego instrumentu (odsetki, opłaty ogólne)
 OTHER_BUCKET = "_INNE"        # operacje z symbolem, którego nie ma w tabelach pozycji
 
@@ -38,6 +38,9 @@ class Portfolio:
     meta: pd.DataFrame           # metadane instrumentów (indeks = symbol)
     cash_by_symbol: pd.DataFrame  # dzienne operacje gotówkowe per instrument (bez przepływów zewnętrznych)
     warnings: list[str] = field(default_factory=list)
+    cash_by_currency: pd.DataFrame | None = None   # saldo gotówki per waluta rachunku, wyrażone w walucie bazowej
+    base: str = "PLN"                              # waluta bazowa (wszystkie kwoty w obiekcie są w niej wyrażone)
+    cash_fx_pnl: pd.DataFrame | None = None        # dzienny wynik z przeliczenia gotówki per waluta (już w wyniku)
 
     @property
     def symbols(self) -> list[str]:
@@ -76,13 +79,17 @@ def _align(frame: pd.DataFrame, dates: pd.DatetimeIndex, columns) -> pd.DataFram
 
 
 def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, meta: pd.DataFrame,
-                prices: pd.DataFrame, fx: pd.DataFrame, as_of=None) -> Portfolio:
+                prices: pd.DataFrame, fx: pd.DataFrame, as_of=None, account_currency: str = "PLN",
+                base: str = "PLN") -> Portfolio:
     """Odtwarza portfel dzień po dniu.
 
     closed / open_ / cash - ramki z parsera (data/xtb_parser.py),
     meta   - mapowanie instrumentów z indeksem = symbol (asset_class, currency, multiplier, ...),
     prices - ceny zamknięcia w walucie instrumentu (kolumny = symbole),
-    fx     - kursy PLN za jednostkę waluty (kolumny = kody walut, w tym PLN = 1).
+    fx     - kursy: ile waluty bazowej za jednostkę waluty (kolumny = kody walut; baza = 1),
+    account_currency - waluta kwot w `cash`, gdy ramka nie ma własnej kolumny `currency` (kilka rachunków),
+    base   - waluta bazowa wyniku. Gotówka jest prowadzona osobno w każdej walucie rachunku i codziennie
+             przeliczana po bieżącym kursie; zmiana jej wartości z tytułu kursu trafia do wyniku (koszyk gotówki).
     """
     warnings: list[str] = []
     pos_cols = ["symbol", "type", "volume", "open_time", "open_price", "close_time"]
@@ -160,12 +167,12 @@ def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, m
     px = px.fillna(0.0)
 
     cur = meta["currency"].tolist()
-    fx_al = _align(fx, dates, sorted(set(cur) | {"PLN"})) if len(symbols) else pd.DataFrame(index=dates)
+    fx_al = _align(fx, dates, sorted(set(cur) | {base})) if len(symbols) else pd.DataFrame(index=dates)
     if len(symbols):
-        fx_al["PLN"] = 1.0
+        fx_al[base] = 1.0
         missing_fx = [c for c in set(cur) if fx_al[c].isna().all()]
         if missing_fx:
-            warnings.append("Brak kursów NBP dla walut: " + ", ".join(missing_fx) + " (przyjęto 1,00).")
+            warnings.append("Brak kursów dla walut: " + ", ".join(missing_fx) + " (przyjęto 1,00).")
         fx_al = fx_al.fillna(1.0)
         fxs = pd.DataFrame({s: fx_al[c].values for s, c in zip(symbols, cur)}, index=dates)
     else:
@@ -176,8 +183,19 @@ def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, m
     upl = (qty * pxv - cost) * mult * fxv
     value = np.where(is_cfd, upl, nominal) if m else np.zeros((n, 0))
 
-    # gotówka i przepływy
-    cash_delta = np.zeros(n)
+    # gotówka i przepływy: saldo prowadzone w walucie każdego rachunku, wyceniane dziennym kursem do waluty bazowej
+    has_ccy = "currency" in cash.columns
+    ccys = sorted(set(cash["currency"].dropna().astype(str))) if has_ccy and len(cash) else [account_currency]
+    rate = {}
+    for c in ccys:
+        if c == base:
+            rate[c] = np.ones(n)
+        elif c in fx.columns and fx[c].notna().any():
+            rate[c] = _align(fx[[c]], dates, [c])[c].fillna(1.0).values
+        else:
+            warnings.append(f"Brak kursu {c}/{base} dla gotówki na rachunku (przyjęto 1,00).")
+            rate[c] = np.ones(n)
+    ccy_delta = {c: np.zeros(n) for c in ccys}
     flows = np.zeros(n)
     by_symbol = np.zeros((n, m))
     bucket_cash = np.zeros(n)
@@ -188,25 +206,34 @@ def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, m
         if i >= n:
             dropped += 1
             continue
-        cash_delta[i] += row.amount
+        c = str(row.currency) if has_ccy else account_currency
+        ccy_delta[c][i] += row.amount
+        amount = row.amount * rate[c][i]
         if row.kind in EXTERNAL_FLOW_KINDS:
-            flows[i] += row.amount
+            flows[i] += amount
         elif row.symbol and row.symbol in sidx:
-            by_symbol[i, sidx[row.symbol]] += row.amount
+            by_symbol[i, sidx[row.symbol]] += amount
         elif row.symbol:
-            bucket_other[i] += row.amount
+            bucket_other[i] += amount
         else:
-            bucket_cash[i] += row.amount
+            bucket_cash[i] += amount
     if dropped:
         warnings.append(f"Pominięto {dropped} operacji gotówkowych po dacie raportu.")
 
-    cash_bal = np.cumsum(cash_delta)
+    cash_ccy, cash_fx = {}, {}
+    for c in ccys:
+        bal = np.cumsum(ccy_delta[c])
+        cash_ccy[c] = bal * rate[c]
+        # zmiana wartości salda z tytułu samego kursu waluty rachunku
+        cash_fx[c] = np.concatenate([[0.0], bal[:-1] * np.diff(rate[c])])
+        bucket_cash += cash_fx[c]
+    cash_bal = np.sum([cash_ccy[c] for c in ccys], axis=0) if ccys else np.zeros(n)
     equity = cash_bal + value.sum(axis=1)
 
     prev = np.concatenate([[0.0], equity[:-1]])
-    base = prev + flows
+    start_cap = prev + flows
     with np.errstate(divide="ignore", invalid="ignore"):
-        ret = np.where(base > 1e-9, equity / base - 1.0, 0.0)
+        ret = np.where(start_cap > 1e-9, equity / start_cap - 1.0, 0.0)
 
     dvalue = np.diff(np.vstack([np.zeros((1, m)), value]), axis=0) if m else np.zeros((n, 0))
     pnl = pd.DataFrame(dvalue + by_symbol, index=dates, columns=symbols)
@@ -223,4 +250,6 @@ def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, m
         flows=pd.Series(flows, index=dates, name="flows"),
         returns=pd.Series(ret, index=dates, name="portfolio"),
         pnl=pnl, meta=meta, cash_by_symbol=frame(by_symbol), warnings=warnings,
+        cash_by_currency=pd.DataFrame(cash_ccy, index=dates), base=base,
+        cash_fx_pnl=pd.DataFrame(cash_fx, index=dates),
     )

@@ -79,9 +79,59 @@ const EXPORT_STEPS = [
   ["Otwórz Historię rachunku", " (Account history) - zakładka nad wykresem, obok Edukacji, Kalendarza i Wiadomości."],
   ["Wejdź w Operacje gotówkowe", " i kliknij Eksportuj po prawej stronie."],
   ["Ustaw pełny zakres dat", " - od otwarcia rachunku do dziś - i format XLSX albo CSV."],
-  ["Powtórz dla zamkniętych i otwartych pozycji", ", jeśli xStation zapisuje każdy raport w osobnym pliku."],
-  ["Wgraj wszystkie pliki naraz", " - tutaj, z komputera albo z telefonu (Pliki / Pobrane). Aplikacja sama rozpozna, który jest który."],
+  ["Powtórz dla zamkniętych i otwartych pozycji", ", jeśli xStation zapisuje każdy raport w osobnym pliku. Nowy eksport ma wszystko w jednym pliku .xlsx."],
+  ["Masz kilka rachunków?", " Przełącz rachunek w xStation (np. z PLN na USD) i wyeksportuj każdy osobno."],
+  ["Wgraj wszystkie pliki", " - tutaj, z komputera albo z telefonu (Pliki / Pobrane). Aplikacja sama rozpozna rachunki i tabele."],
 ];
+
+// --------------------------------------------------------------------------- rachunki i waluta wyświetlania
+
+function accountLine(a) {
+  const n = (x, one, few, many) => `${x} ${x === 1 ? one : (x % 10 >= 2 && x % 10 <= 4 && (x % 100 < 12 || x % 100 > 14)) ? few : many}`;
+  return `${n(a.open, "otwarta pozycja", "otwarte pozycje", "otwartych pozycji")}, ${n(a.closed, "zamknięta", "zamknięte", "zamkniętych")}`;
+}
+
+/** Arkusz z paska tytułu: które rachunki wliczać i w jakiej walucie pokazywać kwoty. */
+export function viewSheet(reloadAll) {
+  const s = api.state.session;
+  openSheet("Portfel i waluta", (close) => {
+    let base = s.base;
+    const picked = new Set(s.accounts.filter((a) => a.selected).map((a) => a.id));
+    const status = el("div");
+    const controls = el("div", { class: "controls" });
+    if (s.accounts.length > 1) {
+      controls.append(el("span", { class: "control-label" }, "Rachunki wliczane do portfela"));
+      s.accounts.forEach((a) => controls.append(controlInput(
+        { name: `acc-${a.id}`, type: "toggle", label: `${a.id} · ${a.currency}`, value: a.selected, tip: accountLine(a) },
+        (on) => { if (on) picked.add(a.id); else picked.delete(a.id); })));
+    }
+    controls.append(controlInput({ name: "base", type: "segmented", label: "Waluta wyświetlania", value: base,
+      options: s.base_choices.map((c) => ({ value: c, label: c })),
+      tip: "Wszystkie kwoty, stopy zwrotu i ryzyko są przeliczane na tę walutę po kursach NBP. Zakładka Podatki zostaje w złotych." },
+    (v) => { base = v; }));
+    const apply = el("button", { class: "btn", type: "button" }, "Zastosuj");
+    apply.addEventListener("click", async () => {
+      if (!picked.size) { status.replaceChildren(el("p", { class: "note warn" }, "Zaznacz przynajmniej jeden rachunek.")); return; }
+      apply.disabled = true;
+      apply.textContent = "Przeliczam…";
+      try {
+        await api.setView({ base, accounts: [...picked] });
+        close();
+        reloadAll();
+      } catch (err) {
+        status.replaceChildren(errorNote(err));
+        apply.disabled = false;
+        apply.textContent = "Zastosuj";
+      }
+    });
+    const body = el("div", {}, controls, apply, status);
+    if (s.accounts.length === 1 && !s.is_demo) {
+      body.append(el("p", { class: "caption", style: "margin-top:14px" },
+        "Masz drugi rachunek (np. w USD)? Wgraj jego eksport w „Więcej → Dane i import” - pojawi się tutaj do zaznaczenia."));
+    }
+    return body;
+  });
+}
 
 export function importView(rerender, reloadAll) {
   const s = api.state.session;
@@ -96,8 +146,9 @@ export function importView(rerender, reloadAll) {
       : "Plik jest zapisany w tym telefonie. Na serwer trafia tylko na czas obliczeń i nie jest tam zapisywany na dysk.")));
 
   const input = el("input", { type: "file", accept: ".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv", multiple: true });
-  const drop = el("label", { class: "drop" }, el("strong", {}, isDemo ? "Wgraj eksport z xStation 5" : "Wgraj nowszy eksport"),
-    "Jeden plik .xlsx albo kilka plików .csv", input);
+  const drop = el("label", { class: "drop" }, el("strong", {}, isDemo ? "Wgraj eksport z xStation 5" : "Dograj rachunek albo nowszy eksport"),
+    isDemo ? "Plik .xlsx z xStation. Masz rachunek w PLN i w USD? Zaznacz oba pliki naraz."
+      : "Nowy plik dodaje się do już wgranych. Nowszy eksport tego samego rachunku zastępuje starszy.", input);
   input.addEventListener("change", async () => {
     if (!input.files.length) return;
     status.replaceChildren(el("p", { class: "note" }, el("span", { class: "pulse" }), "Czytam plik i pobieram notowania. Przy pierwszym razie może to potrwać do minuty."));
@@ -118,6 +169,23 @@ export function importView(rerender, reloadAll) {
       try { await api.setMode("demo"); reloadAll(); } catch (err) { status.replaceChildren(errorNote(err)); demoBtn.disabled = false; }
     });
     root.append(demoBtn);
+  }
+
+  if (!isDemo && s.accounts.length) {
+    const list = el("ul", { class: "ledger" }, s.accounts.map((a) => {
+      const rm = el("button", { class: "link-btn", type: "button", "aria-label": `Usuń rachunek ${a.id} z telefonu` }, "Usuń");
+      let armed = false;
+      rm.addEventListener("click", async () => {
+        if (!armed) { armed = true; rm.textContent = "Na pewno?"; return; }
+        rm.disabled = true;
+        try { await api.removeAccount(a.id); reloadAll(); } catch (err) { status.replaceChildren(errorNote(err)); rm.disabled = false; }
+      });
+      return el("li", {}, el("div", { class: "row" },
+        el("span", { class: "label stack" }, `${a.id} · ${a.currency}`, el("small", {}, `${a.selected ? "" : "odznaczony · "}${accountLine(a)}`)), rm));
+    }));
+    const pick = el("button", { class: "btn quiet", type: "button" }, s.accounts.length > 1 ? "Wybierz rachunki i walutę" : "Zmień walutę wyświetlania");
+    pick.addEventListener("click", () => viewSheet(reloadAll));
+    root.append(el("section", {}, el("h2", { class: "block-title" }, s.accounts.length > 1 ? "Twoje rachunki" : "Twój rachunek"), list, pick));
   }
 
   const sum = s.summary;

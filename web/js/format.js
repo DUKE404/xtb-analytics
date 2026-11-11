@@ -12,6 +12,13 @@ function nf(d) {
 }
 const cache = new Map();
 
+// Waluta wyświetlania: format "pln" z serwera oznacza "kwotę w walucie wybranej przez użytkownika",
+// format "zl" - zawsze złote (podatki).
+const SIGNS = { PLN: "zł", USD: "$", EUR: "€" };
+let sign = SIGNS.PLN;
+export function setCurrency(code) { sign = SIGNS[code] || SIGNS.PLN; }
+export function currencySign() { return sign; }
+
 function fixed(x, digits) {
   if (!cache.has(digits)) cache.set(digits, nf(digits));
   // Intl daje zwykły minus z łącznikiem; typograficzny minus czyta się lepiej w kolumnie liczb
@@ -23,19 +30,20 @@ export function isNum(x) {
 }
 
 /** value + nazwa formatu z serwera -> tekst. sign=true dodaje plus przy wartościach dodatnich. */
-export function fmt(value, kind = "num", digits = null, sign = false) {
+export function fmt(value, kind = "num", digits = null, plus = false) {
   if (kind === "text") return value === null || value === undefined || value === "" ? "–" : String(value);
   if (!isNum(value)) return "–";
   let out;
   switch (kind) {
-    case "pln": out = fixed(value, digits ?? 0) + NBSP + "zł"; break;
+    case "pln": out = fixed(value, digits ?? 0) + NBSP + sign; break;
+    case "zl": out = fixed(value, digits ?? 0) + NBSP + SIGNS.PLN; break;
     case "pct": out = fixed(value * 100, digits ?? 1) + "%"; break;
     case "int": out = fixed(value, 0); break;
     case "days": { const n = Math.round(value); out = fixed(n, 0) + NBSP + (n === 1 ? "dzień" : "dni"); break; }
     case "x": out = fixed(value, digits ?? 2) + "×"; break;
     default: out = fixed(value, digits ?? 2);
   }
-  return sign && value > 0 ? "+" + out : out;
+  return plus && value > 0 ? "+" + out : out;
 }
 
 /** Krótki zapis na osie wykresów: 150 tys., 1,2 mln. */
@@ -51,7 +59,7 @@ export function fmtAxis(value, kind = "num", digits = null) {
   else if (a >= 1e4) s = fixed(value / 1e3, 0) + NBSP + "tys.";
   else if (a >= 100 || Number.isInteger(value)) s = fixed(value, 0);
   else s = fixed(value, digits ?? (a < 1 ? 2 : 1));
-  return kind === "pln" ? s + NBSP + "zł" : s;
+  return kind === "pln" ? s + NBSP + sign : kind === "zl" ? s + NBSP + SIGNS.PLN : s;
 }
 
 const MONTHS = ["sty", "lut", "mar", "kwi", "maj", "cze", "lip", "sie", "wrz", "paź", "lis", "gru"];

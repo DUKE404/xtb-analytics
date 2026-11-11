@@ -2,11 +2,13 @@
 więc nowy ekran to tylko nowa funkcja w Pythonie - bez zmian we froncie.
 
 Rodzaje bloków: statement, metrics, chart, table, note, bullets, controls, section, download.
-Formaty liczb (`fmt`): pln, pct, num, int, days, x (mnożnik), text.
+Formaty liczb (`fmt`): pln (kwota w walucie wyświetlania), zl (zawsze złote), pct, num, int, days,
+x (mnożnik), text.
 Kolory serii: numer miejsca w palecie 0-7 albo nazwa: 'neutral', 'pos', 'neg'.
 """
 from __future__ import annotations
 
+import contextvars
 import math
 import re
 from datetime import date, datetime
@@ -17,8 +19,13 @@ import pandas as pd
 from server.tooltips import TOOLTIPS
 
 # stałe przypisanie kolorów do bytów (kolor idzie za nazwą, nie za kolejnością)
-SERIES_COLORS = {"Portfel": 0, "WIG20": 1, "WIG": 2, "S&P 500 (w PLN)": 3, "MSCI World ETF (w PLN)": 4,
-                 "Wpłaty netto": "neutral"}
+SERIES_COLORS = {"Portfel": 0, "WIG20": 1, "WIG": 2, "S&P 500": 3, "MSCI World ETF": 4, "Wpłaty netto": "neutral"}
+_CCY_SUFFIX = re.compile(r" \(w [A-Z]{3}\)$")
+
+
+def _color(colors: dict, name: str, default):
+    """Kolor idzie za bytem: "S&P 500 (w PLN)" i "S&P 500 (w USD)" to ta sama seria."""
+    return colors.get(name, colors.get(_CCY_SUFFIX.sub("", name), default))
 
 
 def jsonable(obj):
@@ -75,8 +82,35 @@ def f_num(x, digits: int = 2) -> str:
     return s.replace("-", "−")
 
 
+CURRENCY_SIGN = {"PLN": "zł", "USD": "$", "EUR": "€"}
+_currency: contextvars.ContextVar[str] = contextvars.ContextVar("display_currency", default="PLN")
+
+
+def set_currency(code: str) -> None:
+    """Waluta wyświetlania dla bieżącego żądania - używa jej f_pln oraz format "pln" po stronie telefonu."""
+    _currency.set(code if code in CURRENCY_SIGN else "PLN")
+
+
+def currency() -> str:
+    return _currency.get()
+
+
+def cur_sign() -> str:
+    return CURRENCY_SIGN[_currency.get()]
+
+
+def _money(x, digits: int, sign: str) -> str:
+    return "–" if x is None or not math.isfinite(float(x)) else f"{f_num(x, digits)} {sign}"
+
+
 def f_pln(x, digits: int = 0) -> str:
-    return "–" if x is None or not math.isfinite(float(x)) else f"{f_num(x, digits)} zł"
+    """Kwota w walucie wyświetlania (nazwa historyczna: dawniej zawsze złote)."""
+    return _money(x, digits, cur_sign())
+
+
+def f_zl(x, digits: int = 0) -> str:
+    """Kwota zawsze w złotych (podatki)."""
+    return _money(x, digits, "zł")
 
 
 def f_pct(x, digits: int = 1, sign: bool = False) -> str:
@@ -171,7 +205,7 @@ def line(df: pd.DataFrame, fmt: str = "num", digits: int | None = None, colors: 
         keep = sorted(set(range(0, len(df), step)) | {len(df) - 1})
         df = df.iloc[keep]
     colors = SERIES_COLORS | (colors or {})
-    series = [{"name": str(c), "values": _round(df[c].values), "color": colors.get(str(c), i % 8)}
+    series = [{"name": str(c), "values": _round(df[c].values), "color": _color(colors, str(c), i % 8)}
               for i, c in enumerate(df.columns)]
     return {"type": "line", "x": _dates(df.index), "series": series, "fmt": fmt, "digits": digits,
             "area": area, "zero": zero}
@@ -198,7 +232,7 @@ def bars(df: pd.DataFrame, fmt: str = "pct", digits: int | None = None, colors: 
     """Pionowe słupki zgrupowane: wiersze = kategorie na osi X, kolumny = serie."""
     colors = SERIES_COLORS | (colors or {})
     return {"type": "bars", "labels": [str(i) for i in df.index], "fmt": fmt, "digits": digits,
-            "series": [{"name": str(c), "values": _round(df[c].values), "color": colors.get(str(c), i % 8)}
+            "series": [{"name": str(c), "values": _round(df[c].values), "color": _color(colors, str(c), i % 8)}
                        for i, c in enumerate(df.columns)]}
 
 

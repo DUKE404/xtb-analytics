@@ -12,7 +12,8 @@ WEEKDAYS_PL = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobo
 
 
 def _fx_at(fx: pd.DataFrame | None, currency: str, when) -> float:
-    if fx is None or currency == "PLN" or currency not in fx.columns:
+    """Kurs waluty do waluty bazowej (tej, w której wyrażona jest ramka `fx`; baza ma w niej kurs 1)."""
+    if fx is None or currency not in fx.columns:
         return 1.0
     s = fx[currency].dropna()
     if not len(s):
@@ -230,12 +231,13 @@ def volatility_position_size(equity: float, risk_fraction: float, daily_vol: flo
 # --------------------------------------------------------------------------- #
 
 def cost_breakdown(trades: pd.DataFrame, open_positions: pd.DataFrame, cash: pd.DataFrame, meta: pd.DataFrame,
-                   fx: pd.DataFrame | None = None, fx_fee: float = 0.005) -> dict:
+                   fx: pd.DataFrame | None = None, fx_fee: float = 0.005, account_currencies=("PLN",)) -> dict:
     """Prowizje, swapy, spready (szacunek) i przewalutowania (szacunek) w PLN.
 
     - prowizje i swapy: z operacji gotówkowych, a gdy ich tam nie ma - z kolumn pozycji,
     - spread: połowa spreadu z tabeli mapowań (spread_bps) od wartości każdej nogi transakcji,
-    - przewalutowanie: `fx_fee` (domyślnie 0,5%) od wartości kupna i sprzedaży akcji/ETF w walucie obcej.
+    - przewalutowanie: `fx_fee` (domyślnie 0,5%) od wartości kupna i sprzedaży akcji/ETF w walucie, w której
+      nie masz rachunku (`account_currencies`); akcje w USD kupowane z rachunku USD nie są przewalutowywane.
     """
     def cash_sum(kinds):
         return float(cash.loc[cash["kind"].isin(kinds), "amount"].sum()) if len(cash) else 0.0
@@ -258,7 +260,7 @@ def cost_breakdown(trades: pd.DataFrame, open_positions: pd.DataFrame, cash: pd.
         return 10.0
 
     def foreign_stock(sym):
-        return sym in meta.index and meta.at[sym, "asset_class"] != "CFD" and meta.at[sym, "currency"] != "PLN"
+        return sym in meta.index and meta.at[sym, "asset_class"] != "CFD" and meta.at[sym, "currency"] not in account_currencies
 
     spread, fx_cost, turnover = 0.0, 0.0, 0.0
     by_class = {}

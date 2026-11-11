@@ -23,6 +23,9 @@ Aplikacja jest wyłącznie analityczna. Nie loguje się do konta XTB, nie skład
 
 Każda liczba ma objaśnienie prostym językiem: **dotknij wiersza**, żeby je rozwinąć.
 
+Możesz wgrać **kilka rachunków XTB naraz** (np. w PLN i w USD), zaznaczać, które wliczać do portfela, i przełączać
+**walutę wyświetlania** między PLN, USD i EUR - przyciskiem na pasku u góry ekranu.
+
 Po uruchomieniu aplikacja pokazuje **dane przykładowe** (zmyślony portfel, syntetyczne notowania), więc możesz
 obejrzeć wszystko, zanim wgrasz własny plik.
 
@@ -80,12 +83,26 @@ Hasło lokalnie jest opcjonalne. Żeby je ustawić albo włączyć AI, skopiuj `
 
 1. Zaloguj się do **xStation 5** na komputerze (w przeglądarce albo w aplikacji).
 2. Otwórz **Historię rachunku** (Account history) - zakładka nad wykresem, obok Edukacji, Kalendarza i Wiadomości.
-3. Wejdź w **Operacje gotówkowe** i kliknij **Eksportuj** po prawej stronie.
-4. Ustaw **pełny zakres dat** - od otwarcia rachunku do dziś - i format **XLSX** albo **CSV**.
-5. Powtórz eksport dla **zamkniętych pozycji** i **otwartych pozycji**, jeśli xStation zapisuje każdy raport
-   w osobnym pliku.
-6. W aplikacji wejdź w **Więcej → Dane i import** i wgraj **wszystkie pliki naraz**. Aplikacja sama rozpozna, który
-   jest który - po nazwach kolumn, po polsku i po angielsku.
+3. Kliknij **Eksportuj** po prawej stronie i ustaw **pełny zakres dat** - od otwarcia rachunku do dziś.
+4. Zapisz plik **XLSX**. Obecny xStation zapisuje jeden plik na rachunek, np. `USD_51672516_2006-01-01_2026-11-11.xlsx`,
+   z trzema arkuszami: Closed Positions, Open Positions, Cash Operations. Starsze wersje zapisują trzy osobne
+   raporty (także CSV) - aplikacja czyta oba układy.
+5. **Masz kilka rachunków** (np. w PLN i w USD)? Przełącz rachunek w xStation i wyeksportuj każdy osobno.
+6. W aplikacji wejdź w **Więcej → Dane i import** i wgraj pliki - wszystkie naraz albo po kolei. Aplikacja sama
+   rozpozna rachunki (po numerze) i tabele (po nazwach kolumn, po polsku i po angielsku).
+
+### Kilka rachunków i waluta wyświetlania
+
+- Każdy wgrany plik **dodaje się** do już wgranych. Nowszy eksport tego samego rachunku zastępuje starszy.
+- Przycisk na pasku u góry (np. **„2 z 2 rachunków · PLN”**) otwiera wybór: które rachunki wliczać do portfela
+  i w jakiej walucie pokazywać kwoty - **PLN, USD albo EUR**. Wybór jest pamiętany w telefonie.
+- Przelewy między własnymi rachunkami („Currency conversion … from TA: … to: …”) nie są liczone jako wypłata
+  i wpłata, gdy oba rachunki są zaznaczone. Różnica na kursie wymiany trafia do wyniku jako koszt.
+- Gotówka w USD jest codziennie przeliczana po kursie NBP. Jej zmiana wartości w złotych to część wyniku
+  (w atrybucji: efekt walutowy).
+- Zmiana waluty wyświetlania przelicza wszystko: wartości, stopy zwrotu, benchmarki, ryzyko. Stopa zwrotu
+  w dolarach i w złotych będzie inna - różni je zmiana kursu USD/PLN w tym czasie.
+- **Podatki są zawsze w złotych** i obejmują tylko zaznaczone rachunki.
 
 Ważne:
 
@@ -93,11 +110,14 @@ Ważne:
   wypłaty, dywidendy i koszty. Niepełny zakres zaniży albo zawyży stopę zwrotu.
 - Po wgraniu porównaj **Wartość portfela** (Więcej → Dane i import → Wczytane dane) z polem Equity w xStation
   z dnia eksportu. Jeśli się różnią, zwykle winny jest niepełny zakres dat albo zły ticker.
+- Aplikacja porównuje cenę z notowań z ceną „Current price” z raportu XTB i ostrzega, gdy różnią się o ponad 8%
+  (najczęściej zły ticker albo inna waluta notowań).
 - Jeśli wycena którejś pozycji się nie zgadza, popraw ją w **Więcej → Dane i import → Tickery**. Dla CFD sprawdź tam
   też mnożnik i stawkę depozytu.
 - Gdy plik nie zostanie rozpoznany, komunikat powie dokładnie, których kolumn brakuje.
 
-Plik zostaje zapisany w telefonie. Kiedy zrobisz nowszy eksport, po prostu wgraj go ponownie.
+Pliki zostają zapisane w telefonie. Kiedy zrobisz nowszy eksport, po prostu wgraj go - zastąpi starszy plik tego
+samego rachunku. Rachunek usuniesz przyciskiem „Usuń” na liście rachunków.
 
 ---
 
@@ -192,15 +212,20 @@ tests/    pytest: silnik, API, interfejs w przeglądarce (Playwright)
   K. Frencha), **serwer produkcyjny gunicorn** i **wdrożenie na Render** nie były tam uruchamiane - przetestowane są
   parsery odpowiedzi, cache i logika zapasowego źródła. Pierwsze uruchomienie na prawdziwych danych jest pierwszym
   realnym testem tych połączeń.
-- **Parser** był testowany na wygenerowanym pliku w układzie raportu xStation i na wariantach formatu (CSV, polskie
-  nagłówki, przecinki dziesiętne, osobne pliki), ale nie na prawdziwym eksporcie. Jeśli Twój plik ma inne nazwy
-  kolumn, zobaczysz komunikat, czego brakuje - listę rozpoznawanych nazw łatwo rozszerzyć w `data/xtb_parser.py`.
+- **Parser** jest testowany na plikach odtwarzających prawdziwy układ eksportu xStation z listopada 2026
+  (arkusze Closed Positions / Open Positions / Cash Operations, rachunek PLN i USD) oraz na starszym układzie
+  i wariantach formatu (CSV, polskie nagłówki, przecinki dziesiętne, osobne pliki). Pliki testowe powstały na
+  podstawie zrzutów ekranu, nie z oryginalnego pliku - rzadkie typy operacji mogą wymagać dopisania. Gdy czegoś
+  brakuje, zobaczysz komunikat, których kolumn; listę nazw łatwo rozszerzyć w `data/xtb_parser.py`.
 - Yahoo Finance bywa niedostępne z adresów serwerowni; wtedy aplikacja sięga do Stooq, a przy braku notowań wycenia
   pozycję po cenie zakupu i pokazuje ostrzeżenie.
 
 **Dane i wycena**
 
-- Rachunek w PLN jest obsłużony w pełni; rachunki w EUR/USD w podstawowym zakresie.
+- Rachunki w PLN, USD i EUR można łączyć. Kursy do przeliczeń to średnie kursy NBP z dnia operacji, a nie kurs,
+  po którym XTB faktycznie wymienił walutę - drobne różnice trafiają do pozycji „gotówka” w atrybucji.
+- Godziny w nowym eksporcie są w UTC. Transakcja tuż po północy czasu polskiego może trafić do poprzedniego dnia.
+- Przy rachunkach z różnymi datami raportu portfel jest liczony na datę najnowszego.
 - Mnożniki i stawki depozytu CFD pochodzą z tabeli wbudowanej w aplikację - sprawdź je dla swoich instrumentów
   w zakładce Tickery.
 - Ceny są korygowane o splity przez źródło danych, ilości w eksporcie nie - split w trakcie trzymania pozycji może
@@ -219,7 +244,9 @@ tests/    pytest: silnik, API, interfejs w przeglądarce (Playwright)
 
 **Podatki**
 
-- To pomoc obliczeniowa, nie porada. Nie obejmuje strat z lat ubiegłych, innych rachunków, IKE/IKZE ani pozycji
+- FIFO jest liczone osobno dla każdego rachunku. Na rachunku walutowym prowizje, opłaty i wyniki CFD są
+  przeliczane po kursie NBP z dnia operacji (nie z dnia poprzedniego).
+- To pomoc obliczeniowa, nie porada. Nie obejmuje strat z lat ubiegłych, rachunków u innych brokerów, IKE/IKZE ani pozycji
   przeniesionych od innego brokera. Za datę transakcji przyjęto datę z raportu, nie rozliczenia.
 - Kraj do PIT/ZG pochodzi z tabeli tickerów; dla ETF-ów trzeba go poprawić na kraj rejestracji funduszu.
 
