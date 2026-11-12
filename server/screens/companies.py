@@ -83,7 +83,7 @@ def companies(ctx, p) -> dict:
     except Exception as exc:
         return {"title": "Spółki", "blocks": [
             B.statement("Nie udało się pobrać danych o tej spółce.", str(exc)), picker,
-            B.note("Sprawdź ticker Yahoo w „Więcej → Dane i import → Tickery”. Dane fundamentalne są dostępne głównie "
+            B.note("Sprawdź ticker Yahoo w „Więcej → Dane i ustawienia → Tickery”. Dane fundamentalne są dostępne głównie "
                    "dla spółek z USA i dużych spółek europejskich.", "warn")]}
 
     cur, fin = f.get("currency") or "", f.get("financial_currency") or f.get("currency") or ""

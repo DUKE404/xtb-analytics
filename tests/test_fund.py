@@ -102,15 +102,17 @@ def api():
 def test_fund_screens_render(api):
     c, sid = api
     nav = c.get("/api/health").get_json()["nav"]
-    fund = next(m for m in nav["more"] if m["id"] == "fund")
-    assert [s["id"] for s in fund["screens"]] == ["fund-tearsheet", "fund-longshort", "fund-limits"]
+    where = {scr["id"]: sec["id"] for sec in nav["tabs"] + nav["more"] for scr in sec["screens"]}
+    assert (where["perf-summary"], where["fund-longshort"], where["fund-limits"]) == ("perf", "risk", "risk")
+    assert "fund-tearsheet" not in where and not any(sec["id"] == "fund" for sec in nav["more"])
     assert {b["value"] for b in c.get("/api/health").get_json()["settings"]["bench_choices"]} == {"SP500", "NDX", "MSCIW"}
-    for name, q in (("fund-tearsheet", "bench=NDX&window=126"), ("fund-longshort", "bench=SP500&target=0.5"),
+    for name, q in (("perf-summary", "bench=NDX&window=126"), ("fund-longshort", "bench=SP500&target=0.5"),
                     ("fund-limits", "pos=5&cash=50")):
         r = c.get(f"/api/session/{sid}/screen/{name}?{q}")
         assert r.status_code == 200, r.get_data(as_text=True)[:300]
         check_blocks(strict_json(r)["blocks"], {})
-    text = c.get(f"/api/session/{sid}/screen/fund-tearsheet?bench=NDX").get_data(as_text=True)
+    text = c.get(f"/api/session/{sid}/screen/perf-summary?bench=NDX").get_data(as_text=True)
+    assert "MWR / XIRR" in text and "Tracking error" in text and "Czas pod wodą" in text      # to, co miały stare Statystyki
     assert "Nasdaq 100" in text and "Przechwytywanie spadków" in text and "Największe obsunięcia" in text
 
 

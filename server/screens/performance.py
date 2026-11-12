@@ -1,4 +1,4 @@
-"""Ekrany działu Wyniki: statystyki, benchmarki, miesiące, atrybucja."""
+"""Ekrany działu Wyniki: benchmarki, miesiące, atrybucja (statystyki: server/screens/fund.py)."""
 from __future__ import annotations
 
 import pandas as pd
@@ -7,82 +7,15 @@ from core import attribution as attr
 from core import performance as perf
 from server import blocks as B
 
-PERIODS = [("all", "Cały okres"), ("ytd", "Ten rok"), ("12m", "12 miesięcy")]
-
-
-def _period_control(p):
-    period = p.str("period", "all", {k for k, _ in PERIODS})
-    return period, B.controls([B.control("period", "segmented", "Okres", period, PERIODS)])
-
-
-def _start(pf, period):
-    if period == "ytd":
-        return pd.Timestamp(pf.as_of.year, 1, 1)
-    if period == "12m":
-        return pf.as_of - pd.DateOffset(years=1)
-    return None
-
-
 def _slice(ctx, p):
-    pf = ctx.pf
-    period, ctl = _period_control(p)
-    start = _start(pf, period)
-    r = pf.returns if start is None else pf.returns.loc[start:]
-    return period, ctl, start, r
-
-
-def summary(ctx, p) -> dict:
-    pf = ctx.pf
-    period, ctl, start, r = _slice(ctx, p)
-    if len(r) < 5:
-        return {"title": "Statystyki", "blocks": [ctl, B.note("Za mało danych w wybranym okresie.")]}
-    bench = ctx.bench_series(p.bench).loc[r.index[0]:]
-    flows = pf.flows.loc[r.index[0]:].copy()
-    if start is not None:
-        prev = pf.equity.loc[:r.index[0]].iloc[:-1]
-        flows.iloc[0] += float(prev.iloc[-1]) if len(prev) else 0.0     # wartość na początku okresu = "wpłata"
-    s = perf.summary(r, bench, p.rf, flows, float(pf.equity.iloc[-1]))
-    recovered = s["dd_recovery"] is not None or s["max_drawdown"] == 0
-    blocks = [
-        ctl,
-        B.metrics([
-            B.metric("Stopa zwrotu (TWR)", s["total_return"], "pct"),
-            B.metric("CAGR", s["cagr"], "pct"),
-            B.metric("MWR / XIRR", s["xirr"], "pct"),
-            B.metric("Zmienność", s["volatility"], "pct"),
-            B.metric("Najlepszy dzień", s["best_day"], "pct", digits=2),
-            B.metric("Najgorszy dzień", s["worst_day"], "pct", digits=2),
-            B.metric("Dni na plusie", s["positive_days"], "pct", digits=0),
-        ], "Stopy zwrotu"),
-        B.metrics([
-            B.metric("Sharpe", s["sharpe"]),
-            B.metric("Sortino", s["sortino"]),
-            B.metric("Calmar", s["calmar"]),
-            B.metric("Max drawdown", s["max_drawdown"], "pct"),
-            B.metric("Najdłuższe obsunięcie", s["max_dd_duration_days"], "days", tip="Czas obsunięcia",
-                     note="nadal trwa" if s["dd_longest_ongoing"] else None),
-            B.metric("Odrabianie największego spadku", s["max_dd_recovery_days"] if recovered else None, "days",
-                     tip="Czas odrabiania", note=None if recovered else "jeszcze nie odrobione"),
-        ], "Zwrot w relacji do ryzyka"),
-        B.metrics([
-            B.metric("Beta", s["beta"]),
-            B.metric("Alfa (rocznie)", s["alpha"], "pct", tip="Alfa"),
-            B.metric("Tracking error", s["tracking_error"], "pct"),
-            B.metric("Information ratio", s["information_ratio"]),
-            B.metric("Skośność", s["skew"]),
-            B.metric("Kurtoza", s["kurtosis"]),
-        ], f"Względem benchmarku: {ctx.bench_label(p.bench)}"),
-    ]
-    if s["n_days"] < 500:
-        blocks.append(B.note("Przy historii krótszej niż ok. 2 lata Sharpe, alfa i information ratio mają dużą "
-                             "niepewność. Traktuj je jako orientacyjne."))
-    return {"title": "Statystyki", "blocks": blocks}
+    """Okres analizy wybiera się paskiem „Okres” nad treścią (ctx.pf jest już przycięty) - ekran bierze całość."""
+    return "all", None, None, ctx.pf.returns
 
 
 def benchmarks(ctx, p) -> dict:
     period, ctl, start, r = _slice(ctx, p)
     if len(r) < 5:
-        return {"title": "Benchmarki", "blocks": [ctl, B.note("Za mało danych w wybranym okresie.")]}
+        return {"title": "Benchmarki", "blocks": [B.note("Za mało danych w wybranym okresie.")]}
     b = ctx.bench_returns().loc[r.index[0]:]
     curves = pd.DataFrame({"Portfel": perf.twr_index(r)})
     for k in b.columns:
@@ -93,7 +26,6 @@ def benchmarks(ctx, p) -> dict:
     for k in full.columns:
         yr[ctx.bench_label(k)] = perf.yearly_returns(full[k])
     blocks = [
-        ctl,
         B.chart(B.line(curves, "num", 0), "Portfel a indeksy, start okresu = 100",
                 f"Indeksy w innej walucie przeliczone na {_cur_name(ctx)} po kursach NBP, więc zawierają efekt walutowy. "
                 "WIG20, S&P 500 i Nasdaq 100 to indeksy cenowe (bez dywidend); MSCI World jest liczony ceną ETF-u."),
@@ -145,7 +77,6 @@ def attribution(ctx, p) -> dict:
         (pf.cash_fx_pnl.sum() if pf.cash_fx_pnl is not None else None)
     fx = attr.fx_effect_by_currency(a, ctx.base, cash_fx).sort_values(ascending=False)
     blocks = [
-        ctl,
         B.metrics([
             B.metric("Wynik w okresie", float(a["pnl"].sum()), "pln", tip="Wynik całkowity", sign=True),
             B.metric("Efekt cen", float(a["price_effect"].sum()), "pln", sign=True,

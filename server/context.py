@@ -10,7 +10,8 @@ import pandas as pd
 
 from core.portfolio import Portfolio
 from data.loader import (BASE_CHOICES, BENCHMARK_KEYS, MarketBundle, build_portfolio, cfd_symbols, convert_export,
-                         export_between, load_market, resolve_since, resolve_until, without_cfd)
+                         export_between, load_market, resolve_since, resolve_until, valuation_date,
+                         without_cfd)
 from data.mapping import build_mapping
 from data.sample_generator import ensure_sample
 from data.xtb_parser import XTBExport, merge_exports, parse_accounts
@@ -48,6 +49,7 @@ class Ctx:
     since_date: pd.Timestamp | None = None
     until: str = ""                           # koniec okna analizy (data) albo "" = do daty raportu
     until_date: pd.Timestamp | None = None
+    report_date: pd.Timestamp | None = None   # data raportu XTB (skład portfela); pf_full.as_of to dzień wyceny
     _cache: dict = field(default_factory=dict, repr=False)
 
     @property
@@ -113,7 +115,7 @@ class Ctx:
 def build_context(files: list[tuple[str, bytes]] | None, overrides: pd.DataFrame | None = None,
                   provider=None, base: str = "PLN", accounts: list[str] | None = None, parsed: list | None = None,
                   exclude: list[str] | None = None, exclude_cfd: bool = False, since: str = "",
-                  until: str = "") -> Ctx:
+                  until: str = "", today=None) -> Ctx:
     """files=None -> dane przykładowe (tryb demo, notowania syntetyczne, bez sieci).
 
     base        - waluta wyświetlania (PLN / USD / EUR),
@@ -122,7 +124,9 @@ def build_context(files: list[tuple[str, bytes]] | None, overrides: pd.DataFrame
     parsed      - już sparsowane rachunki (zmiana widoku nie wymaga ponownego czytania plików),
     exclude_cfd - portfel bez CFD: ich wynik jest traktowany jak wpłata / wypłata,
     since       - od kiedy analizować ("", "ytd", "12m", "24m", "36m" albo data RRRR-MM-DD),
-    until       - do kiedy analizować (data RRRR-MM-DD; "" = do daty raportu).
+    until       - do kiedy analizować (data RRRR-MM-DD; "" = do dnia wyceny),
+    today       - dzień wyceny. Domyślnie: dla prawdziwych notowań dzisiejsza data (portfel z raportu jest
+                  przedłużany bieżącymi cenami), dla danych przykładowych i syntetycznych - data raportu.
     """
     is_demo = files is None
     if is_demo:
@@ -138,11 +142,22 @@ def build_context(files: list[tuple[str, bytes]] | None, overrides: pd.DataFrame
     base = base if base in BASE_CHOICES else "PLN"
     mapping = build_mapping(raw.symbols, overrides, hints=raw.instruments)
     provider = provider or make_provider(is_demo)
-    market = load_market(raw, mapping, provider, base=base)
+    if today is None and not is_demo and not getattr(provider, "is_synthetic", False):
+        today = pd.Timestamp.today()
+    val = valuation_date(raw.as_of, today) if raw.as_of is not None else None
+    market = load_market(raw, mapping, provider, as_of=val, base=base)
     has_cfd = bool(cfd_symbols(mapping) & set(raw.symbols))
     exclude_cfd = bool(exclude_cfd and has_cfd)
     work = without_cfd(raw, mapping) if exclude_cfd else raw
-    pf_full = build_portfolio(work, mapping, market)
+    pf_full = build_portfolio(work, mapping, market, as_of=val)
+    report = pd.Timestamp(raw.as_of).normalize() if raw.as_of is not None else pf_full.as_of
+    gap = int((pf_full.as_of - report).days)
+    if gap > 0:
+        pf_full.warnings.append(
+            f"Wycena na {pf_full.as_of:%d.%m.%Y} przy składzie i gotówce z raportu XTB z {report:%d.%m.%Y}: po tej dacie liczą "
+            "się tylko zmiany cen i kursów. Transakcji, wpłat i dywidend z ostatnich "
+            f"{gap} dni tu nie ma - wgraj nowy eksport, żeby je uwzględnić."
+            + (" Raport ma ponad dwa tygodnie, więc różnica może być duża." if gap > 14 else ""))
     end = resolve_until(until, pf_full.as_of, pf_full.dates[0])
     start = resolve_since(since, end if end is not None else pf_full.as_of, pf_full.dates[0])
     pf = pf_full.window(start, end) if (start is not None or end is not None) else pf_full
@@ -154,4 +169,4 @@ def build_context(files: list[tuple[str, bytes]] | None, overrides: pd.DataFrame
                files=files, export_raw=raw, export_pln=export_pln, parsed=parsed, overrides=overrides,
                pf_full=pf_full, exclude_cfd=exclude_cfd, has_cfd=has_cfd,
                since=str(since or "") if start is not None else "", since_date=start,
-               until=end.strftime("%Y-%m-%d") if end is not None else "", until_date=end)
+               until=end.strftime("%Y-%m-%d") if end is not None else "", until_date=end, report_date=report)

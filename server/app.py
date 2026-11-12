@@ -93,7 +93,7 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
         pf = ctx.pf
         return {
             "sid": sid, "is_demo": ctx.is_demo, "summary": ctx.export.summary(), "notes": ctx.export.notes,
-            "warnings": pf.warnings, "as_of": pf.as_of, "start": pf.dates[0], "source": ctx.market.source,
+            "warnings": pf.warnings, "as_of": pf.as_of, "report_date": ctx.report_date, "start": pf.dates[0], "source": ctx.market.source,
             "equity": float(pf.equity.iloc[-1]), "mapping": ctx.mapping.to_dict("records"),
             "unmapped": [s for s in ctx.mapping.loc[(ctx.mapping["yf_ticker"] == "") & (ctx.mapping["stooq_ticker"] == ""), "symbol"]],
             "price_sources": getattr(ctx.provider, "sources", {}),

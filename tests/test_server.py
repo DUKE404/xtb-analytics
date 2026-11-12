@@ -292,3 +292,20 @@ def test_health_reports_build_and_unknown_screen_code(client, sid):
     assert h["build"] == build_id(WEB_DIR) and len(h["build"]) == 12
     r = client.get(f"/api/session/{sid}/screen/calendar-days")
     assert r.status_code == 404 and r.get_json()["code"] == "no_screen"
+
+
+def test_navigation_is_five_tabs_and_five_more_sections():
+    from server.screens import CLIENT_SCREENS, SCREENS, nav_config
+    nav = nav_config(ai_enabled=True)
+    assert [s["label"] for s in nav["tabs"]] == ["Przegląd", "Spółki", "Wyniki", "Ryzyko"]          # + "Więcej" = 5 na pasku
+    assert [s["label"] for s in nav["more"]] == ["Symulacje", "Trader", "Podatki", "AI", "Dane i ustawienia"]
+    ids = [scr["id"] for sec in nav["tabs"] + nav["more"] for scr in sec["screens"]]
+    assert len(ids) == len(set(ids))                                             # każdy ekran w jednym miejscu
+    assert set(ids) == set(SCREENS) | CLIENT_SCREENS                             # żaden ekran nie został bez wejścia
+    cfd = next(scr for sec in nav["tabs"] for scr in sec["screens"] if scr["id"] == "risk-cfd")
+    assert cfd["needs"] == "cfd"
+
+
+def test_session_meta_has_report_date(client, sid):
+    meta = client.get(f"/api/session/{sid}").get_json()
+    assert meta["report_date"][:10] == meta["as_of"][:10] == "2026-11-06"        # demo: wycena w dniu raportu

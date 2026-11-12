@@ -117,7 +117,7 @@ def _align(frame: pd.DataFrame, dates: pd.DatetimeIndex, columns) -> pd.DataFram
 
 def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, meta: pd.DataFrame,
                 prices: pd.DataFrame, fx: pd.DataFrame, as_of=None, account_currency: str = "PLN",
-                base: str = "PLN") -> Portfolio:
+                base: str = "PLN", report_date=None) -> Portfolio:
     """Odtwarza portfel dzień po dniu.
 
     closed / open_ / cash - ramki z parsera (data/xtb_parser.py),
@@ -125,6 +125,8 @@ def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, m
     prices - ceny zamknięcia w walucie instrumentu (kolumny = symbole),
     fx     - kursy: ile waluty bazowej za jednostkę waluty (kolumny = kody walut; baza = 1),
     account_currency - waluta kwot w `cash`, gdy ramka nie ma własnej kolumny `currency` (kilka rachunków),
+    report_date - dzień, z którego pochodzą otwarte pozycje i ich „cena bieżąca” (data raportu XTB). Gdy `as_of`
+             jest późniejsze, portfel jest przedłużany do `as_of`: skład i gotówka z raportu, ceny i kursy bieżące.
     base   - waluta bazowa wyniku. Gotówka jest prowadzona osobno w każdej walucie rachunku i codziennie
              przeliczana po bieżącym kursie; zmiana jej wartości z tytułu kursu trafia do wyniku (koszyk gotówki).
     """
@@ -158,6 +160,12 @@ def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, m
 
     def day_idx(ts) -> int:
         return int(np.searchsorted(dvals, np.datetime64(pd.Timestamp(ts).normalize()), side="left"))
+
+    # dzień, do którego odnosi się "cena bieżąca" otwartych pozycji (ostatnia sesja nie późniejsza niż raport)
+    report_idx = n - 1
+    if report_date is not None:
+        report_idx = int(np.searchsorted(dvals, np.datetime64(pd.Timestamp(report_date).normalize()), side="right")) - 1
+        report_idx = min(max(report_idx, 0), n - 1)
 
     symbols = sorted(pos["symbol"].unique().tolist())
     sidx = {s: j for j, s in enumerate(symbols)}
@@ -255,7 +263,7 @@ def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, m
         j = sidx[p.symbol]
         series = pxv[:, j]
         last = min(i1, n) - 1
-        anchor = i1 if i1 < n else n - 1
+        anchor = i1 if i1 < n else max(report_idx, i0)
         r0 = p.open_price / series[i0] if series[i0] > 0 and p.open_price > 0 else 1.0
         r1 = p.end_price / series[anchor] if (p.end_price == p.end_price and p.end_price > 0 and series[anchor] > 0) else r0
         tol = CFD_LEVEL_TOLERANCE if is_cfd[j] else STOCK_LEVEL_TOLERANCE
@@ -265,7 +273,8 @@ def reconstruct(closed: pd.DataFrame, open_: pd.DataFrame, cash: pd.DataFrame, m
                       and abs(move) > 1e-9 * p.open_price and p.gross * sgn * move > 0)
         if direct or p.symbol in no_price or max(abs(np.log(r0)), abs(np.log(r1))) > tol:
             span = anchor - i0
-            w = (np.arange(i0, last + 1) - i0) / span if span > 0 else np.zeros(last + 1 - i0)
+            # po dniu raportu współczynnik skali zostaje stały - dalej liczy się już tylko ruch notowań
+            w = np.clip((np.arange(i0, last + 1) - i0) / span, 0.0, 1.0) if span > 0 else np.zeros(last + 1 - i0)
             k = np.exp((1.0 - w) * np.log(r0) + w * np.log(r1))
             if p.symbol not in no_price and not is_cfd[j]:
                 rescaled.add(p.symbol)

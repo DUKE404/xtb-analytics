@@ -49,21 +49,98 @@ function chart(b) {
     b.caption ? el("figcaption", { class: "caption" }, b.caption) : null);
 }
 
+/** Klucz sortowania komórki: liczba, data "dd.mm.rrrr" albo "dd.mm" w tekście, liczba na początku tekstu, tekst. */
+export function sortKey(v) {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  if (!s || s === "–") return null;
+  const d = s.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+  if (d) return Number(`${d[3]}${d[2]}${d[1]}`);
+  const n = s.match(/^[+−-]?\d[\d\s\u00a0]*(,\d+)?/);
+  if (n) return parseFloat(n[0].replace(/[\s\u00a0]/g, "").replace("−", "-").replace(",", "."));
+  return s.toLocaleLowerCase("pl");
+}
+
+function compare(a, b) {
+  if (a === null || b === null) return a === b ? 0 : a === null ? 1 : -1;        // puste zawsze na końcu
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  if (typeof a === "number") return -1;
+  if (typeof b === "number") return 1;
+  return a.localeCompare(b, "pl");
+}
+
+/** Tabela jako CSV dla Excela po polsku: średnik, przecinek dziesiętny, procenty jako liczby. */
+export function tableCsv(b) {
+  const cell = (v, c) => {
+    if (v === null || v === undefined || (typeof v === "number" && !Number.isFinite(v))) return "";
+    if (typeof v === "number") {
+      const n = c.fmt === "pct" ? Math.round(v * 1e6) / 1e4 : ["pln", "zl"].includes(c.fmt) ? Math.round(v * 100) / 100 : Math.round(v * 1e6) / 1e6;
+      return String(n).replace(".", ",");
+    }
+    const s = String(v).replace(/\u00a0/g, " ");
+    return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const head = b.columns.map((c) => cell(c.label + (c.fmt === "pct" ? " (%)" : ""), {}));
+  return [head, ...b.rows.map((r) => b.columns.map((c) => cell(r[c.key], c)))].map((r) => r.join(";")).join("\r\n");
+}
+
+function saveCsv(b) {
+  const name = (b.title || "tabela").toLocaleLowerCase("pl").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ł/g, "l")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "tabela";
+  const url = URL.createObjectURL(new Blob(["\ufeff" + tableCsv(b)], { type: "text/csv;charset=utf-8" }));
+  const a = el("a", { href: url, download: `${name}.csv` });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+/** Tabela: sortowanie po kliknięciu nagłówka (malejąco → rosnąco → kolejność wyjściowa) i eksport do CSV. */
 function table(b) {
   const numeric = (c) => c.fmt !== "text";
-  const head = el("tr", {}, b.columns.map((c) => el("th", { class: numeric(c) ? null : "t", scope: "col" }, c.label)));
   const body = el("tbody");
-  const draw = (rows) => body.replaceChildren(...rows.map((r) => el("tr", {}, b.columns.map((c, i) =>
-    el("td", { class: (!numeric(c) && i > 0 ? "t" : "") + tone(r[c.key], c.fmt, c.signed) || null }, fmt(r[c.key], c.fmt, c.digits, c.signed))))));
   const limit = b.limit || 12;
-  draw(b.rows.slice(0, limit));
-  const wrap = el("div", { class: "table-wrap" }, el("table", { class: "data" }, el("thead", {}, head), body));
+  let all = b.rows.length <= limit;
+  let sort = null;                       // { key, dir } albo null = kolejność z serwera
+  const ordered = () => {
+    if (!sort) return b.rows;
+    const keyed = b.rows.map((r, i) => [sortKey(r[sort.key]), i, r]);
+    keyed.sort((x, y) => (x[0] === null || y[0] === null ? compare(x[0], y[0]) : sort.dir * compare(x[0], y[0])) || x[1] - y[1]);
+    return keyed.map((k) => k[2]);
+  };
+  const draw = () => {
+    const rows = all ? ordered() : ordered().slice(0, limit);
+    body.replaceChildren(...rows.map((r) => el("tr", {}, b.columns.map((c, i) =>
+      el("td", { class: (!numeric(c) && i > 0 ? "t" : "") + tone(r[c.key], c.fmt, c.signed) || null }, fmt(r[c.key], c.fmt, c.digits, c.signed))))));
+  };
+  const heads = b.columns.map((c) => {
+    const btn = el("button", { type: "button", class: "th-sort" }, c.label);
+    const th = el("th", { class: numeric(c) ? null : "t", scope: "col", "aria-sort": "none" }, btn);
+    btn.addEventListener("click", () => {
+      const first = numeric(c) ? -1 : 1;                 // liczby od największej, tekst od A
+      sort = !sort || sort.key !== c.key ? { key: c.key, dir: first } : sort.dir === first ? { key: c.key, dir: -first } : null;
+      heads.forEach((h) => h.setAttribute("aria-sort", "none"));
+      if (sort) th.setAttribute("aria-sort", sort.dir > 0 ? "ascending" : "descending");
+      draw();
+    });
+    return th;
+  });
+  draw();
+  const wrap = el("div", { class: "table-wrap" }, el("table", { class: "data" }, el("thead", {}, el("tr", {}, heads)), body));
   const out = el("section", {}, title(b.title), b.rows.length ? wrap : el("p", { class: "caption" }, "Brak wierszy."));
-  if (b.rows.length > limit) {
+  const tools = el("div", { class: "table-tools" });
+  if (!all) {
     const more = el("button", { class: "more-rows", type: "button" }, `Pokaż wszystkie (${b.rows.length})`);
-    more.addEventListener("click", () => { draw(b.rows); more.remove(); });
-    out.append(more);
+    more.addEventListener("click", () => { all = true; draw(); more.remove(); });
+    tools.append(more);
   }
+  if (b.rows.length > 1) {
+    const csv = el("button", { class: "csv-btn", type: "button", title: "Zapisz tabelę jako plik CSV (otworzy się w Excelu)" }, "Pobierz CSV");
+    csv.addEventListener("click", () => saveCsv(b));
+    tools.append(csv);
+  }
+  if (tools.children.length) out.append(tools);
   if (b.caption) out.append(el("p", { class: "caption" }, b.caption));
   return out;
 }

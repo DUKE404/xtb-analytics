@@ -17,3 +17,9 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY   # opcjonalnie: włącza dział AI; można zostawić puste
         sync: false
+    # Szybsze pierwsze otwarcie: darmowa instancja po uśpieniu traci pobrane notowania i pobiera je od nowa.
+    # Na płatnym planie (instancja nie zasypia) można dodać trwały dysk i wskazać go zmienną CACHE_DIR, np.:
+    #   plan: starter
+    #   disk: { name: cache, mountPath: /var/data, sizeGB: 1 }
+    #   envVars: [{ key: CACHE_DIR, value: /var/data }]
+    # Składnię i ceny sprawdź w dokumentacji Render przed zmianą.

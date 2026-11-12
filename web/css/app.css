@@ -211,7 +211,16 @@ table.data th:first-child, table.data td:first-child {
 table.data td.t { text-align: left; color: var(--ink-2); max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 table.data th.t { text-align: left; }
 table.data th:last-child, table.data td:last-child { padding-right: var(--gutter); }
-.more-rows { margin-top: 10px; font-size: 14px; color: var(--brass); padding: 6px 0; }
+.table-tools { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 8px; }
+.more-rows { font-size: 14px; color: var(--brass); padding: 6px 0; }
+.csv-btn { margin-left: auto; font-size: 13px; color: var(--ink-3); padding: 6px 0; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.csv-btn:hover, .csv-btn:focus-visible { color: var(--ink); }
+.th-sort { font: inherit; color: inherit; padding: 4px 0; white-space: nowrap; cursor: pointer; }
+.th-sort::after { content: ""; display: inline-block; width: 0; height: 0; margin-left: 5px; vertical-align: middle; border: 4px solid transparent; opacity: 0; }
+.th-sort:hover, .th-sort:focus-visible { color: var(--ink); }
+th[aria-sort="descending"] .th-sort, th[aria-sort="ascending"] .th-sort { color: var(--ink); }
+th[aria-sort="descending"] .th-sort::after { border-top-color: var(--brass); border-bottom-width: 0; opacity: 1; }
+th[aria-sort="ascending"] .th-sort::after { border-bottom-color: var(--brass); border-top-width: 0; opacity: 1; }
 
 /* ---------- wykresy ---------- */
 .chart-body { margin: 6px calc(-1 * var(--gutter)) 0; }

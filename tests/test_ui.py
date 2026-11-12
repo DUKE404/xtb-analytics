@@ -117,14 +117,70 @@ def test_every_screen_renders_without_errors(page, base_url):
     assert not page.errors, page.errors
 
 
-def test_period_control_refetches_and_keeps_choice(page, base_url):
+def test_statistics_screen_has_one_period_selector(page, base_url):
+    """Okres wybiera się tylko paskiem nad treścią - na ekranie nie ma drugiej, osobnej kontrolki okresu."""
     page.goto(base_url + "/#/perf/perf-summary")
     wait_ready(page)
+    assert page.locator("#subnav button[aria-current='page']").inner_text() == "Statystyki"
+    assert page.locator("main .segmented button", has_text="12 miesięcy").count() == 0
     before = page.locator(".ledger .value").first.inner_text()
-    page.locator(".segmented button", has_text="12 miesięcy").tap()
-    page.wait_for_function("document.querySelector('.segmented button[aria-pressed=\"true\"]').textContent === '12 miesięcy'")
+    page.locator("#viewbar button", has_text="12M").tap()
+    page.wait_for_function("document.querySelector('#viewbar button[aria-pressed=true]')?.textContent === '12M'", timeout=90000)
     wait_ready(page)
     assert page.locator(".ledger .value").first.inner_text() != before
+    text = page.inner_text("main")
+    assert "MWR / XIRR" in text and "Przechwytywanie spadków" in text and "Największe obsunięcia" in text
+    assert not page.errors, page.errors
+
+
+def test_bottom_bar_and_moved_addresses(page, base_url):
+    labels = page.locator("#tabs button:visible span").all_inner_texts()
+    assert labels == ["Przegląd", "Spółki", "Wyniki", "Ryzyko", "Więcej"]
+    page.locator("#tabs button", has_text="Spółki").tap()
+    wait_ready(page)
+    assert page.inner_text("#bar-title") == "Spółki" and page.locator("table.data").count() >= 1
+    # stare adresy (zakładki w przeglądarce, skróty) trafiają w nowe miejsca
+    for old, title, sub in (("#/fund/fund-longshort", "Ryzyko", "Long / short"), ("#/fund", "Wyniki", "Statystyki"),
+                            ("#/fund/fund-tearsheet", "Wyniki", "Statystyki"), ("#/settings", "Dane i ustawienia", "Ustawienia")):
+        page.evaluate(f"location.hash = '{old}'")
+        page.wait_for_function(f"document.querySelector('#bar-title')?.textContent === '{title}'", timeout=30000)
+        assert page.locator("#subnav button[aria-current='page']").inner_text() == sub, old
+    page.evaluate("location.hash = '#/risk'")
+    page.wait_for_function("document.querySelector('#bar-title')?.textContent === 'Ryzyko'")
+    assert "CFD" in page.locator("#subnav").inner_text()                         # demo ma CFD
+    page.locator("#viewbar button", has_text="Bez CFD").tap()
+    page.wait_for_function("document.querySelector('#viewbar .opt')?.getAttribute('aria-pressed') === 'true'", timeout=90000)
+    wait_ready(page)
+    assert "CFD" not in page.locator("#subnav").inner_text()                     # bez CFD ekran znika z nawigacji
+    assert not page.errors, page.errors
+
+
+def test_table_sort_by_header_and_csv_export(page, base_url):
+    page.goto(base_url + "/#/companies")
+    wait_ready(page)
+    table = page.locator("table.data").first
+    col = lambda: [t.replace("\u2212", "-").replace("%", "").replace(",", ".").replace("+", "")
+                   for t in table.locator("tbody tr td:nth-child(3)").all_inner_texts()]
+    head = table.locator("th", has_text="Dzień").first
+    head.locator("button").tap()
+    assert head.get_attribute("aria-sort") == "descending"
+    vals = [float(v) for v in col()]
+    assert vals == sorted(vals, reverse=True)
+    head.locator("button").tap()
+    assert head.get_attribute("aria-sort") == "ascending" and [float(v) for v in col()] == sorted(vals)
+    head.locator("button").tap()
+    assert head.get_attribute("aria-sort") == "none"                             # trzecie kliknięcie: kolejność wyjściowa
+    table.locator("th", has_text="Pozycja").locator("button").tap()
+    names = table.locator("tbody tr td:first-child").all_inner_texts()
+    assert names == sorted(names, key=str.casefold)
+    with page.expect_download() as dl:
+        page.locator(".csv-btn").first.click()
+    assert dl.value.suggested_filename == "twoje-pozycje.csv"
+    text = open(dl.value.path(), encoding="utf-8-sig", newline="").read()
+    lines = text.split("\r\n")
+    assert lines[0].startswith("Pozycja;Cena;Dzień (%);Dzień (kwota);") and len(lines) == 14
+    amount = lines[1].split(";")[3]
+    assert "." not in amount and len(amount.partition(",")[2]) <= 2               # przecinek dziesiętny, najwyżej grosze
     assert not page.errors, page.errors
 
 
@@ -147,8 +203,10 @@ def test_more_menu_import_and_ticker_edit(page, base_url):
     page.locator("#tabs button", has_text="Więcej").tap()
     page.wait_for_selector(".menu")
     assert page.locator(".menu button").count() >= 2
-    page.locator(".menu button", has_text="Dane i import").tap()
+    assert page.locator(".menu button").all_inner_texts()[0].startswith("Symulacje")
+    page.locator(".menu button", has_text="Dane i ustawienia").tap()
     page.wait_for_selector(".drop")
+    assert "Ustawienia" in page.locator("#subnav").inner_text()
     assert "dane przykładowe" in page.inner_text(".statement").lower()
     page.locator("#subnav button", has_text="Tickery").tap()
     page.wait_for_selector(".map-row")
@@ -385,6 +443,11 @@ def test_desktop_layout_has_sidebar_and_tiles(desktop):
     assert page.locator("figure.chart").nth(0).bounding_box()["width"] > 900          # samotny wykres na całą szerokość
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     shot(page, "d1-overview", full=False)
+    page.locator("#tabs button", has_text="Wyniki").click()
+    wait_ready(page)
+    shot(page, "d6-statistics", full=False)
+    page.locator("#tabs button", has_text="Przegląd").click()
+    wait_ready(page)
     page.locator("#tabs button", has_text="Spółki").click()
     wait_ready(page)
     assert page.inner_text("#bar-title") == "Spółki" and "Na ostatniej sesji" in page.inner_text(".statement")

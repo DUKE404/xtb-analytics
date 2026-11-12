@@ -9,7 +9,9 @@ from contextlib import closing
 
 import pandas as pd
 
-DEFAULT_CACHE_PATH = os.path.join(".cache", "market.sqlite")
+# CACHE_DIR: katalog na pobrane notowania. Na serwerze z trwałym dyskiem wskaż go tutaj - po restarcie nic nie
+# trzeba pobierać od nowa.
+DEFAULT_CACHE_PATH = os.path.join(os.environ.get("CACHE_DIR") or ".cache", "market.sqlite")
 
 
 class Cache:

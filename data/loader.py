@@ -319,6 +319,8 @@ def price_check(export: XTBExport, market: MarketBundle) -> list[str]:
         if not len(ref) or sym not in market.prices.columns:
             continue
         ours = market.prices[sym].dropna()
+        if export.as_of is not None:
+            ours = ours.loc[:pd.Timestamp(export.as_of).normalize()]       # cena z dnia raportu, nie z dnia wyceny
         if not len(ours) or ref.iloc[-1] <= 0:
             continue
         if abs(float(ours.iloc[-1]) / float(ref.iloc[-1]) - 1.0) > PRICE_CHECK_TOLERANCE:
@@ -330,10 +332,26 @@ def price_check(export: XTBExport, market: MarketBundle) -> list[str]:
             + ". Sprawdź ticker i walutę w zakładce Tickery."]
 
 
-def build_portfolio(export: XTBExport, mapping: pd.DataFrame, market: MarketBundle) -> Portfolio:
-    """`export` z kwotami w walutach rachunków (tak jak w plikach XTB)."""
+def valuation_date(report_date, today=None) -> pd.Timestamp:
+    """Dzień wyceny: dzisiejsza data (albo ostatni dzień roboczy przed weekendem), nie wcześniej niż data raportu."""
+    report = pd.Timestamp(report_date).normalize()
+    if today is None:
+        return report
+    day = pd.Timestamp(today).normalize()
+    while day.weekday() >= 5:
+        day -= pd.Timedelta(days=1)
+    return max(day, report)
+
+
+def build_portfolio(export: XTBExport, mapping: pd.DataFrame, market: MarketBundle, as_of=None) -> Portfolio:
+    """`export` z kwotami w walutach rachunków (tak jak w plikach XTB).
+
+    `as_of` późniejsze niż data raportu = wycena „na dziś”: skład i gotówka z raportu, ceny i kursy do `as_of`.
+    """
     acc = export.currency if export.currency and export.currency != "MIX" else market.base
+    end = export.as_of if as_of is None or export.as_of is None else max(pd.Timestamp(as_of), pd.Timestamp(export.as_of))
     pf = reconstruct(export.closed, export.open, export.cash, mapping.set_index("symbol"),
-                     market.prices, market.fx, as_of=export.as_of, account_currency=acc, base=market.base)
+                     market.prices, market.fx, as_of=end, account_currency=acc, base=market.base,
+                     report_date=export.as_of)
     pf.warnings = list(market.warnings) + pf.warnings + price_check(export, market)
     return pf

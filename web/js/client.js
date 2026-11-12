@@ -160,7 +160,7 @@ export function viewSheet(reloadAll, opts = {}) {
     const body = el("div", {}, controls, apply, status);
     if (s.accounts.length === 1 && !s.is_demo) {
       body.append(el("p", { class: "caption", style: "margin-top:14px" },
-        "Masz drugi rachunek (np. w USD)? Wgraj jego eksport w „Więcej → Dane i import” - pojawi się tutaj do zaznaczenia."));
+        "Masz drugi rachunek (np. w USD)? Wgraj jego eksport w „Więcej → Dane i ustawienia” - pojawi się tutaj do zaznaczenia."));
     }
     return body;
   });

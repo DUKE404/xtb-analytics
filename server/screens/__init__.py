@@ -50,12 +50,11 @@ from server.screens import companies, fund, overview, watchlist, performance, ri
 SCREENS = {
     "companies-list": watchlist.companies_list,
     "companies": companies.companies,
-    "fund-tearsheet": fund.tearsheet,
     "fund-longshort": fund.longshort,
     "fund-limits": fund.limits,
     "overview": overview.overview,
     "data": overview.data,
-    "perf-summary": performance.summary,
+    "perf-summary": fund.tearsheet,
     "perf-benchmarks": performance.benchmarks,
     "perf-periods": performance.periods,
     "perf-attribution": performance.attribution,
@@ -79,23 +78,21 @@ SCREENS = {
 # Dolny pasek: maks. 5 pozycji. "more" to menu z pozostałymi działami.
 NAV = [
     {"id": "overview", "label": "Przegląd", "icon": "home", "screens": [{"id": "overview", "label": "Przegląd"}]},
+    {"id": "companies", "label": "Spółki", "icon": "companies", "screens": [
+        {"id": "companies-list", "label": "Lista"}, {"id": "companies", "label": "Wycena"}]},
     {"id": "perf", "label": "Wyniki", "icon": "chart", "screens": [
         {"id": "perf-summary", "label": "Statystyki"}, {"id": "perf-benchmarks", "label": "Benchmarki"},
         {"id": "perf-periods", "label": "Miesiące"}, {"id": "perf-attribution", "label": "Atrybucja"}]},
     {"id": "risk", "label": "Ryzyko", "icon": "shield", "screens": [
-        {"id": "risk-var", "label": "VaR"}, {"id": "risk-correlation", "label": "Korelacje"},
-        {"id": "risk-exposure", "label": "Ekspozycje"}, {"id": "risk-factors", "label": "Czynniki"},
-        {"id": "risk-cfd", "label": "CFD"}]},
-    {"id": "sim", "label": "Symulacje", "icon": "dice", "screens": [
-        {"id": "sim-stress", "label": "Stres"}, {"id": "sim-montecarlo", "label": "Monte Carlo"},
-        {"id": "sim-whatif", "label": "Co jeśli"}, {"id": "sim-optimize", "label": "Optymalizacja"}]},
+        {"id": "risk-var", "label": "VaR"}, {"id": "fund-limits", "label": "Limity"},
+        {"id": "risk-exposure", "label": "Ekspozycje"}, {"id": "fund-longshort", "label": "Long / short"},
+        {"id": "risk-correlation", "label": "Korelacje"}, {"id": "risk-factors", "label": "Czynniki"},
+        {"id": "risk-cfd", "label": "CFD", "needs": "cfd"}]},      # "needs": ekran widoczny tylko, gdy w portfelu są CFD
 ]
 MORE = [
-    {"id": "companies", "label": "Spółki", "hint": "Lista pozycji z cenami i zmianą dzienną, terminy raportów, wiadomości, wycena",
-     "screens": [{"id": "companies-list", "label": "Lista"}, {"id": "companies", "label": "Wycena"}]},
-    {"id": "fund", "label": "Fundusz", "hint": "Tearsheet, ekspozycja long/short i beta, zabezpieczenie, limity ryzyka", "screens": [
-        {"id": "fund-tearsheet", "label": "Tearsheet"}, {"id": "fund-longshort", "label": "Long / short"},
-        {"id": "fund-limits", "label": "Limity"}]},
+    {"id": "sim", "label": "Symulacje", "hint": "Scenariusze stresowe, Monte Carlo, symulator transakcji, optymalizacja", "screens": [
+        {"id": "sim-stress", "label": "Stres"}, {"id": "sim-montecarlo", "label": "Monte Carlo"},
+        {"id": "sim-whatif", "label": "Co jeśli"}, {"id": "sim-optimize", "label": "Optymalizacja"}]},
     {"id": "trader", "label": "Trader", "hint": "Skuteczność, wzorce zachowań, wielkość pozycji, koszty, reżimy rynku", "screens": [
         {"id": "trader-stats", "label": "Statystyki"}, {"id": "trader-patterns", "label": "Wzorce"},
         {"id": "trader-sizing", "label": "Wielkość pozycji"}, {"id": "trader-costs", "label": "Koszty"},
@@ -103,10 +100,9 @@ MORE = [
     {"id": "tax", "label": "Podatki", "hint": "Zestawienie do PIT-38: FIFO, kursy NBP, dywidendy zagraniczne",
      "screens": [{"id": "tax", "label": "PIT-38"}]},
     {"id": "ai", "label": "AI", "hint": "Memo ryzyka i pytania o portfel (model Claude)", "screens": [{"id": "ai", "label": "AI"}]},
-    {"id": "import", "label": "Dane i import", "hint": "Wgraj eksport z xStation 5, popraw tickery", "screens": [
-        {"id": "import", "label": "Import"}, {"id": "mapping", "label": "Tickery"}, {"id": "data", "label": "Wczytane dane"}]},
-    {"id": "settings", "label": "Ustawienia", "hint": "Benchmark, stopa wolna od ryzyka, instalacja na telefonie",
-     "screens": [{"id": "settings", "label": "Ustawienia"}]},
+    {"id": "import", "label": "Dane i ustawienia", "hint": "Wgraj eksport z xStation 5, popraw tickery, benchmark i stopa wolna od ryzyka",
+     "screens": [{"id": "import", "label": "Import"}, {"id": "mapping", "label": "Tickery"},
+                 {"id": "data", "label": "Wczytane dane"}, {"id": "settings", "label": "Ustawienia"}]},
 ]
 CLIENT_SCREENS = {"import", "mapping", "settings", "ai"}   # rysowane w całości po stronie telefonu (web/js/client.js)
 

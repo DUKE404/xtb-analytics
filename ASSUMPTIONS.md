@@ -17,7 +17,7 @@ zmienić w kodzie; najważniejsze są też wystawione w UI (panel boczny, tabela
 - **Dostęp**: adres w chmurze jest publiczny, więc aplikacja obsługuje hasło (`APP_PASSWORD`). Bez tej zmiennej
   jest otwarta - tak jest wygodnie lokalnie, ale w chmurze hasło trzeba ustawić.
 - **Nawigacja**: dolny pasek ma najwyżej 5 pozycji, więc 8 działów ze specyfikacji rozłożono na Przegląd,
-  Wyniki, Ryzyko, Symulacje i „Więcej” (Trader, Podatki, AI, Dane i import, Ustawienia). Długie działy mają
+  Wyniki, Ryzyko, Symulacje i „Więcej” (Trader, Podatki, AI, Dane i ustawienia, Ustawienia). Długie działy mają
   pod-zakładki u góry.
 - **Tooltipy**: na telefonie nie ma najechania kursorem, więc objaśnienie „co to znaczy” rozwija się po
   dotknięciu wiersza z liczbą.
@@ -307,3 +307,25 @@ wyceniony jak akcja lub po złym poziomie cen. Pliku nie widziałem, dlatego pop
   treści artykułów nie pobieram. Najwyżej 3 nagłówki na spółkę, 15 łącznie.
 - **Kolumny ze znakiem** w tabelach (zielony plus, czerwony minus) są włączane per kolumna - tylko tam,
   gdzie liczba jest zmianą lub wynikiem.
+
+## Ulepszenia po audycie: nawigacja, wycena na dziś, tabele, cache
+
+- **Nawigacja**: z 11 działów zostało 8 (7 bez AI). Dolny pasek: Przegląd, Spółki, Wyniki, Ryzyko, Więcej -
+  Spółki weszły na pasek jako ekran codzienny, Symulacje przeszły do „Więcej”. Dział Fundusz został rozdzielony:
+  Tearsheet połączony ze starymi Statystykami (Wyniki → Statystyki), Long / short i Limity są w Ryzyku.
+  Ustawienia dołączyły do „Dane i ustawienia”. Żadna funkcja nie została usunięta; identyfikatory ekranów
+  zostały, a stare adresy (#/fund, #/settings, fund-tearsheet) przekierowują w nowe miejsca.
+- **Jeden wybór okresu**: usunięta osobna kontrolka „Okres” z ekranów Wyniki - dublowała pasek nad treścią
+  i dawała dwa różne okresy naraz.
+- **Ekran CFD** widoczny tylko przy pozycjach CFD i wyłączonym „Bez CFD” (pole `needs` w konfiguracji nawigacji).
+- **Reżimy, Czynniki, Optymalizacja** zostają - audyt proponował ich schowanie, ale to decyzja użytkownika.
+- **Wycena na dziś**: przy prawdziwych notowaniach dzień wyceny = dzisiaj (w weekend: piątek), nie wcześniej niż
+  data raportu. Skład i gotówka z raportu, ceny i kursy bieżące. „Cena bieżąca” z raportu kotwiczy wycenę w dniu
+  raportu; po nim współczynnik skali jest stały, a CFD kontynuuje wynik z raportu proporcjonalnie do ruchu ceny.
+  W trybie demo i z danymi syntetycznymi wycena zostaje na dacie raportu (powtarzalne testy).
+- **Sortowanie tabel** po stronie telefonu: liczby, daty w tekście (dd.mm.rrrr) i liczby na początku tekstu
+  („62,71 USD”) są sortowane liczbowo; puste zawsze na końcu. Kolejność z serwera wraca trzecim kliknięciem.
+- **CSV**: średnik, przecinek dziesiętny, BOM UTF-8, procenty jako liczby w kolumnie z dopiskiem „(%)”,
+  kwoty do grosza - pod polskiego Excela.
+- **Cache**: katalog z `CACHE_DIR`. Darmowego planu Render nie da się tym przyspieszyć (dysk znika po uśpieniu) -
+  to ograniczenie hostingu, opisane w `render.yaml`.

@@ -111,7 +111,7 @@ def _table(out, title):
 
 def test_list_screen_is_first_in_companies_section(api):
     c, sid = api
-    comp = c.get("/api/health").get_json()["nav"]["more"][0]
+    comp = c.get("/api/health").get_json()["nav"]["tabs"][1]                 # druga zakładka na dolnym pasku
     assert comp["id"] == "companies" and [s["id"] for s in comp["screens"]] == ["companies-list", "companies"]
     out = strict_json(c.get(f"/api/session/{sid}/screen/companies-list"))
     check_blocks(out["blocks"], {})

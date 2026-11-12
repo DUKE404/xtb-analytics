@@ -16,6 +16,7 @@ const ICONS = {
   more: "M6 12h.01M12 12h.01M18 12h.01",
   fund: "M4 19h16M6 19V10M10 19V6M14 19v-7M18 19V8M4 6l4 2 4-4 4 3 4-2",
   companies: "M4 20V9l6-4v15M10 20V11l10-4v13M3 20h18M13.5 13h3M13.5 16.5h3",
+  sim: "M5 5h14v14H5zM9 9h.01M15 15h.01M12 12h.01M15 9h.01M9 15h.01",
   trader: "M4 17l5-5 3.5 3.5L20 8M15 8h5v5",
   tax: "M7 4h10v16l-2.5-1.5L12 20l-2.5-1.5L7 20zM10 9h4M10 13h4",
   ai: "M12 4v2.5M12 17.5V20M4 12h2.5M17.5 12H20M9 9h6v6H9z",
@@ -27,10 +28,19 @@ const CLIENT_SCREENS = new Set(["import", "mapping", "settings", "ai"]);
 const screenParams = new Map();   // parametry kontrolek zapamiętane per ekran
 let loadToken = 0;
 
+/** Działy z serwera; ekrany oznaczone "needs" pokazują się tylko, gdy mają sens (np. CFD tylko przy pozycjach CFD). */
 function sections() {
   const nav = api.state.health.nav;
-  return { tabs: nav.tabs, more: nav.more, all: [...nav.tabs, ...nav.more] };
+  const s = api.state.session || {};
+  const ok = (scr) => scr.needs !== "cfd" || (s.has_cfd && !s.exclude_cfd);
+  const trim = (list) => list.map((sec) => ({ ...sec, screens: (sec.screens || []).filter(ok) }));
+  const tabs = trim(nav.tabs), more = trim(nav.more);
+  return { tabs, more, all: [...tabs, ...more] };
 }
+
+// adresy sprzed uproszczenia nawigacji (zapisane zakładki, skróty na ekranie głównym)
+const MOVED_SECTIONS = { fund: ["perf", ""], settings: ["import", "settings"] };
+const MOVED_SCREENS = { "fund-tearsheet": "perf-summary" };
 
 function parseRoute() {
   const [sec, scr] = location.hash.replace(/^#\/?/, "").split("/");
@@ -124,7 +134,9 @@ function drawBar(titleText) {
     s.exclude_cfd ? "bez CFD" : null, periodLabel(s) || null].filter(Boolean).join(" · ");
   const pick = el("button", { class: "view-btn", type: "button", "aria-label": `Widok portfela: ${what}` }, what);
   pick.addEventListener("click", () => viewSheet(reloadAll));
-  barMeta.append(pick, el("div", { class: s.is_demo ? "demo" : null }, s.is_demo ? "dane przykładowe" : `stan na ${fmtDate(s.as_of)}`));
+  barMeta.append(pick, el("div", { class: s.is_demo ? "demo" : null }, s.is_demo ? "dane przykładowe"
+    : s.report_date && String(s.report_date).slice(0, 10) < String(s.as_of).slice(0, 10)
+      ? `wycena ${fmtDate(s.as_of).slice(0, 5)} · skład z ${fmtDate(s.report_date).slice(0, 5)}` : `stan na ${fmtDate(s.as_of)}`));
 }
 
 function skeleton() {
@@ -189,6 +201,12 @@ function route() {
   const { tabs, more, all } = sections();
   let { sec, scr } = parseRoute();
   ++loadToken;
+  if (MOVED_SECTIONS[sec]) { scr = scr || MOVED_SECTIONS[sec][1]; sec = MOVED_SECTIONS[sec][0]; }
+  if (MOVED_SCREENS[scr]) scr = MOVED_SCREENS[scr];
+  if (scr && !all.find((s) => s.id === sec && (s.screens || []).some((x) => x.id === scr))) {
+    const home = all.find((s) => (s.screens || []).some((x) => x.id === scr));      // ekran przeniesiony do innego działu
+    if (home) sec = home.id;
+  }
 
   if (sec === "more") {
     drawTabs("more");
@@ -236,7 +254,7 @@ async function start() {
       try { await api.setMode("demo"); } catch { /* obsłużone niżej */ }
       if (api.state.session) {
         route();
-        main.prepend(errorNote(new Error(`Nie udało się wczytać zapisanego eksportu: ${err.message}\nPokazuję dane przykładowe. Wgraj plik ponownie w „Więcej → Dane i import”.`)));
+        main.prepend(errorNote(new Error(`Nie udało się wczytać zapisanego eksportu: ${err.message}\nPokazuję dane przykładowe. Wgraj plik ponownie w „Więcej → Dane i ustawienia”.`)));
         return;
       }
     }

@@ -135,7 +135,7 @@ def companies_list(ctx, p) -> dict:
     if not rows:
         return {"title": "Lista", "blocks": [
             B.statement("Nie udało się pobrać notowań dla pozycji z portfela.", "Spróbuj ponownie za chwilę."),
-            B.note("Sprawdź tickery Yahoo w „Dane i import → Tickery”.", "warn")]}
+            B.note("Sprawdź tickery Yahoo w „Dane i ustawienia → Tickery”.", "warn")]}
 
     t = pd.DataFrame(rows)
     sort = p.str("sort", "weight", [s[0] for s in SORTS])
@@ -236,6 +236,6 @@ def companies_list(ctx, p) -> dict:
     src = "dane przykładowe (zmyślone)" if ctx.is_demo else "Yahoo Finance"
     blocks.append(B.note(f"Źródło: {src}" + (f", najnowsze notowanie z {pd.Timestamp(latest):%d.%m.%Y}" if latest else "")
                          + ". Ceny mogą być opóźnione o kilkanaście minut; lista odświeża się co 10 minut. Skład portfela "
-                         f"pochodzi z raportu XTB z {pf.as_of:%d.%m.%Y} i nie zależy od wybranego okresu analizy. "
+                         f"pochodzi z raportu XTB z {(ctx.report_date or pf.as_of):%d.%m.%Y} i nie zależy od wybranego okresu analizy. "
                          "Terminy raportów potrafią się zmieniać."))
     return {"title": "Lista", "blocks": blocks}

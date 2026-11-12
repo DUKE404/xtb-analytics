@@ -123,3 +123,72 @@ def test_account_with_short_stock_cfd_never_goes_negative():
     stock_days = pf.qty["NVDA.US"] != 0
     assert pf.value.loc[stock_days, "NVDA.US"].min() > 0.8 * 3600           # akcja sprzed splitu trzyma wartość zakupu
     assert np.isfinite(pf.returns).all()
+
+
+# --------------------------------------------------------------------------- wycena "na dziś" (po dacie raportu)
+
+def _open_stock(market_price=110.0):
+    return make_frames(
+        positions_open=[{"symbol": "PKN.PL", "type": "BUY", "volume": 10, "open_time": "2025-01-06 10:00",
+                         "open_price": 100.0, "market_price": market_price}],
+        cash_ops=[{"type": "deposit", "time": "2025-01-06 09:00", "amount": 1500.0},
+                  {"type": "Stock purchase", "time": "2025-01-06 10:00", "amount": -1000.0, "symbol": "PKN.PL"}])
+
+
+def test_roll_forward_values_report_holdings_at_later_prices():
+    """Raport z 8 stycznia (cena 110), wycena na 10 stycznia: skład i gotówka z raportu, cena już 121."""
+    closed, open_, cash = _open_stock()
+    prices = pd.DataFrame({"PKN.PL": [100.0, 105.0, 110.0, 115.0, 121.0]}, index=DAYS)
+    pf = reconstruct(closed, open_, cash, META, prices, FX, as_of="2025-01-10", report_date="2025-01-08")
+    assert pf.as_of == pd.Timestamp("2025-01-10")
+    assert pf.value["PKN.PL"].tolist() == pytest.approx([1000.0, 1050.0, 1100.0, 1150.0, 1210.0])
+    assert pf.equity.iloc[-1] == pytest.approx(500.0 + 1210.0) and pf.flows.sum() == pytest.approx(1500.0)
+    assert pf.qty["PKN.PL"].iloc[-1] == 10 and pf.cash.iloc[-1] == pytest.approx(500.0)
+    # bez przedłużenia portfel kończy się w dniu raportu
+    short = reconstruct(closed, open_, cash, META, prices, FX, as_of="2025-01-08", report_date="2025-01-08")
+    assert short.equity.iloc[-1] == pytest.approx(1600.0) and pf.equity.loc["2025-01-08"] == pytest.approx(1600.0)
+
+
+def test_roll_forward_keeps_report_scale_when_quotes_are_mis_scaled():
+    """Notowania 10x niższe niż ceny z raportu: skala ustalona w dniu raportu obowiązuje także po nim."""
+    closed, open_, cash = _open_stock()
+    prices = pd.DataFrame({"PKN.PL": [10.0, 10.5, 11.0, 11.5, 12.1]}, index=DAYS)
+    pf = reconstruct(closed, open_, cash, META, prices, FX, as_of="2025-01-10", report_date="2025-01-08")
+    assert pf.value["PKN.PL"].loc["2025-01-08"] == pytest.approx(1100.0)            # dokładnie cena z raportu
+    assert pf.value["PKN.PL"].iloc[-1] == pytest.approx(1210.0)                     # +10% od dnia raportu, jak notowania
+
+
+def test_roll_forward_continues_cfd_result_from_the_report():
+    """CFD: w raporcie +500 przy 5100 (otwarcie 5000). Notowania z innego poziomu rosną potem o kolejne 2%."""
+    closed, open_, cash = make_frames(
+        positions_open=[{"symbol": "US500", "type": "BUY", "volume": 0.1, "open_time": "2025-01-06 10:00",
+                         "open_price": 5000.0, "market_price": 5100.0, "gross_pl": 500.0}],
+        cash_ops=[{"type": "deposit", "time": "2025-01-06 09:00", "amount": 2000.0}])
+    prices = pd.DataFrame({"US500": [4000.0, 4040.0, 4080.0, 4120.8, 4161.6]}, index=DAYS)
+    pf = reconstruct(closed, open_, cash, META, prices, FX, as_of="2025-01-10", report_date="2025-01-08")
+    assert pf.value["US500"].loc["2025-01-08"] == pytest.approx(500.0)
+    assert pf.value["US500"].iloc[-1] == pytest.approx(500.0 * (5100 * 1.02 - 5000) / 100.0)      # 5202 -> +1010
+    assert pf.equity.iloc[-1] == pytest.approx(2000.0 + 1010.0)
+
+
+def test_valuation_date_rules():
+    from data.loader import valuation_date
+    assert valuation_date("2026-11-11") == pd.Timestamp("2026-11-11")                        # bez "dziś" = data raportu
+    assert valuation_date("2026-11-11", "2026-11-12") == pd.Timestamp("2026-11-12")
+    assert valuation_date("2026-11-11", "2026-11-15") == pd.Timestamp("2026-11-13")          # niedziela -> piątek
+    assert valuation_date("2026-11-11", "2026-11-01") == pd.Timestamp("2026-11-11")          # nigdy przed raportem
+
+
+def test_context_rolls_forward_only_when_asked_or_live():
+    same = build_context(None)
+    assert same.pf_full.as_of == same.report_date == pd.Timestamp("2026-11-06")
+    assert not any("Wycena na" in w for w in same.pf_full.warnings)
+    ctx = build_context(None, today="2026-11-13")
+    pf = ctx.pf_full
+    assert pf.as_of == pd.Timestamp("2026-11-13") and ctx.report_date == pd.Timestamp("2026-11-06")
+    assert pf.flows.sum() == pytest.approx(same.pf_full.flows.sum())                         # żadnych nowych wpłat
+    assert (pf.qty.iloc[-1] == same.pf_full.qty.iloc[-1]).all()                              # skład z raportu
+    assert pf.equity.iloc[-1] - pf.flows.sum() == pytest.approx(pf.pnl.values.sum())         # tożsamość wyniku
+    assert pf.equity.loc["2026-11-06"] == pytest.approx(same.pf_full.equity.iloc[-1])        # historia bez zmian
+    w = [x for x in pf.warnings if "Wycena na 13.11.2026" in x]
+    assert w and "06.11.2026" in w[0] and "wgraj nowy eksport" in w[0]

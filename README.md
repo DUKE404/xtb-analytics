@@ -88,7 +88,7 @@ Hasło lokalnie jest opcjonalne. Żeby je ustawić albo włączyć AI, skopiuj `
    z trzema arkuszami: Closed Positions, Open Positions, Cash Operations. Starsze wersje zapisują trzy osobne
    raporty (także CSV) - aplikacja czyta oba układy.
 5. **Masz kilka rachunków** (np. w PLN i w USD)? Przełącz rachunek w xStation i wyeksportuj każdy osobno.
-6. W aplikacji wejdź w **Więcej → Dane i import** i wgraj pliki - wszystkie naraz albo po kolei. Aplikacja sama
+6. W aplikacji wejdź w **Więcej → Dane i ustawienia** i wgraj pliki - wszystkie naraz albo po kolei. Aplikacja sama
    rozpozna rachunki (po numerze) i tabele (po nazwach kolumn, po polsku i po angielsku).
 
 ### Widok portfela: CFD i okres analizy
@@ -106,22 +106,39 @@ Przycisk na pasku u góry otwiera **Widok portfela** - ustawienia wspólne dla w
 Okres wybierzesz też **jednym kliknięciem z paska „Okres” nad treścią każdego ekranu** (Całość / YTD / 12M / 24M /
 3L / Zakres dat…). Obok jest przełącznik „Bez CFD”.
 
-### Fundusz: tearsheet, long/short, limity
+### Miary funduszowe: statystyki, long/short, limity
 
-Dział **Fundusz** układa te same dane tak, jak raportuje je fundusz long/short:
+Te same dane ułożone tak, jak raportuje je fundusz long/short:
 
-- **Tearsheet** - CAGR, zmienność, Sharpe, Sortino, Calmar, beta, alfa, information ratio, przechwytywanie
-  wzrostów i spadków benchmarku, statystyki miesięcy, tail ratio, omega, kroczący Sharpe / zmienność / beta
-  oraz tabela największych obsunięć (szczyt, dołek, odrobienie).
-- **Long / short** - ekspozycja długa, krótka, brutto i netto jako część NAV, beta portfela z bet pozycji,
+- **Wyniki → Statystyki** - TWR, CAGR, XIRR, zmienność, Sharpe, Sortino, Calmar, beta, alfa, tracking error,
+  information ratio, przechwytywanie wzrostów i spadków benchmarku, statystyki miesięcy i dni, tail ratio, omega,
+  kroczący Sharpe / zmienność / beta oraz tabela największych obsunięć (szczyt, dołek, odrobienie).
+- **Ryzyko → Long / short** - ekspozycja długa, krótka, brutto i netto jako część NAV, beta portfela z bet pozycji,
   ekspozycja sektorowa long vs short, wkład każdej pozycji w betę i **kalkulator zabezpieczenia bety**
   (jaki nominał krótkiej pozycji na indeksie sprowadza betę do wybranego poziomu).
-- **Limity** - monitor limitów ryzyka z własnymi progami: pozycja, sektor, top 5, ekspozycja brutto, VaR,
+- **Ryzyko → Limity** - monitor limitów ryzyka z własnymi progami: pozycja, sektor, top 5, ekspozycja brutto, VaR,
   obsunięcie, minimalna gotówka. Status: w normie / blisko / przekroczony.
+
+### Nawigacja
+
+Na dole telefonu (na komputerze: w bocznym panelu) jest pięć zakładek: **Przegląd, Spółki, Wyniki, Ryzyko, Więcej**.
+W „Więcej” są: Symulacje, Trader, Podatki, AI (gdy włączone) oraz Dane i ustawienia. Ekran Ryzyko → CFD pokazuje
+się tylko wtedy, gdy masz pozycje CFD. Okres analizy wybiera się wyłącznie paskiem „Okres” nad treścią.
+
+### Wycena na dziś
+
+Raport z xStation pokazuje stan z chwili eksportu. Aplikacja bierze z niego **skład portfela i gotówkę**, a wycenia
+je **bieżącymi cenami i kursami na dzisiejszy dzień**. Na pasku u góry widać wtedy „wycena 12.11 · skład z 11.11”.
+Transakcji, wpłat i dywidend po dacie raportu aplikacja nie zna - po każdej zmianie w portfelu wgraj nowy eksport.
+
+### Tabele: sortowanie i eksport
+
+Kliknięcie nagłówka kolumny sortuje tabelę (malejąco → rosnąco → kolejność wyjściowa). Pod tabelą jest
+**Pobierz CSV** - plik otwiera się w Excelu (średnik jako separator, przecinek dziesiętny).
 
 ### Spółki: lista pozycji, raporty, wiadomości
 
-Dział **Spółki** otwiera się na zakładce **Lista** - to codzienny rzut oka na portfel:
+Dział **Spółki** (druga zakładka na dolnym pasku) otwiera się na zakładce **Lista** - to codzienny rzut oka na portfel:
 
 - **Twoje pozycje** - każda pozycja z bieżącą ceną, zmianą dzienną w procentach i w kwocie, wagą w portfelu,
   wynikiem od ceny zakupu, odległością od szczytu z 52 tygodni i datą najbliższego raportu. Kolejność: według
@@ -172,11 +189,11 @@ Ważne:
 
 - **Operacje gotówkowe są obowiązkowe** i powinny obejmować całą historię rachunku. Z nich aplikacja odtwarza wpłaty,
   wypłaty, dywidendy i koszty. Niepełny zakres zaniży albo zawyży stopę zwrotu.
-- Po wgraniu porównaj **Wartość portfela** (Więcej → Dane i import → Wczytane dane) z polem Equity w xStation
+- Po wgraniu porównaj **Wartość portfela** (Więcej → Dane i ustawienia → Wczytane dane) z polem Equity w xStation
   z dnia eksportu. Jeśli się różnią, zwykle winny jest niepełny zakres dat albo zły ticker.
 - Aplikacja porównuje cenę z notowań z ceną „Current price” z raportu XTB i ostrzega, gdy różnią się o ponad 8%
   (najczęściej zły ticker albo inna waluta notowań).
-- Jeśli wycena którejś pozycji się nie zgadza, popraw ją w **Więcej → Dane i import → Tickery**. Dla CFD sprawdź tam
+- Jeśli wycena którejś pozycji się nie zgadza, popraw ją w **Więcej → Dane i ustawienia → Tickery**. Dla CFD sprawdź tam
   też mnożnik i stawkę depozytu.
 - Gdy plik nie zostanie rozpoznany, komunikat powie dokładnie, których kolumn brakuje.
 
@@ -292,6 +309,12 @@ tests/    pytest: silnik, API, interfejs w przeglądarce (Playwright)
 - Przy rachunkach z różnymi datami raportu portfel jest liczony na datę najnowszego.
 - Mnożniki i stawki depozytu CFD pochodzą z tabeli wbudowanej w aplikację - sprawdź je dla swoich instrumentów
   w zakładce Tickery.
+- **Wycena na dziś** zakłada, że od daty raportu nic nie kupiłeś ani nie sprzedałeś. Im starszy eksport, tym
+  większy możliwy rozjazd - aplikacja przypomina o tym w „Uwagach do danych”. Niezrealizowany wynik pozycji
+  w niektórych tabelach (np. CFD) pochodzi wprost z raportu, czyli z dnia eksportu.
+- **Serwer**: darmowa instancja Render po uśpieniu traci pobrane notowania, więc pierwsze otwarcie po przerwie
+  jest wolniejsze. Trwały dysk i instancja bez usypiania wymagają płatnego planu (wskazówka w `render.yaml`,
+  zmienna `CACHE_DIR`).
 - **Lista spółek**: bieżące notowania, terminy raportów i wiadomości z Yahoo nie były testowane na żywo
   (środowisko budowy nie ma sieci) - testy używają danych w kształcie zwracanym przez bibliotekę yfinance.
   Ceny bywają opóźnione, część dat raportów jest szacunkowa, nagłówki są zwykle po angielsku. „Dzień (kwota)”

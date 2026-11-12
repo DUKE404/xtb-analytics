@@ -1,4 +1,4 @@
-"""Fundusz: widok zarządzającego portfelem long/short - tearsheet, ekspozycja brutto/netto i beta, limity ryzyka.
+"""Miary funduszowe: statystyki (tearsheet) w dziale Wyniki; long/short z betą i limity ryzyka w dziale Ryzyko.
 
 To te same dane co na pozostałych ekranach, ułożone tak, jak raportuje je fundusz: stopy i ryzyko względem
 benchmarku, obsunięcia jako epizody, ekspozycje jako część NAV, limity ze statusem.
@@ -24,6 +24,8 @@ def _bench(ctx, p):
 def tearsheet(ctx, p) -> dict:
     pf = ctx.pf
     r = pf.returns
+    if len(r) < 5:
+        return {"title": "Statystyki", "blocks": [B.note("Za mało danych w wybranym okresie.")]}
     b, bname = _bench(ctx, p)
     s = perf.summary(r, b, p.rf, pf.flows, float(pf.equity.iloc[-1]))
     cap = H.capture_ratios(r, b) if b is not None else {"up": np.nan, "down": np.nan, "up_months": 0, "down_months": 0}
@@ -36,38 +38,46 @@ def tearsheet(ctx, p) -> dict:
             f"- Sharpe {B.f_num(s['sharpe'], 2)}.")
     sub = (f"{bname}: {B.f_pct(bench_cagr)} rocznie. Beta {B.f_num(s.get('beta'), 2)}, alfa {B.f_pct(s.get('alpha'), 1, sign=True)} rocznie."
            if b is not None and np.isfinite(bench_cagr) else None)
+    recovered = s.get("dd_recovery") is not None or s["max_drawdown"] == 0
     blocks = [
         B.statement(lead, sub),
         B.metrics([
-            B.metric("Stopa roczna (CAGR)", s["cagr"], "pct", "CAGR", sign=True),
-            B.metric("Zmienność roczna", s["volatility"], "pct", "Zmienność"),
-            B.metric("Sharpe", s["sharpe"], "num", "Sharpe", digits=2),
-            B.metric("Sortino", s["sortino"], "num", "Sortino", digits=2),
+            B.metric("Stopa zwrotu (TWR)", s["total_return"], "pct", sign=True),
+            B.metric("CAGR", s["cagr"], "pct", sign=True),
+            B.metric("MWR / XIRR", s["xirr"], "pct", sign=True),
+            B.metric("Zmienność", s["volatility"], "pct"),
+            B.metric("Sharpe", s["sharpe"], "num", digits=2),
+            B.metric("Sortino", s["sortino"], "num", digits=2),
             B.metric("Calmar", s["calmar"], "num", "Stopa roczna podzielona przez największe obsunięcie. Mówi, ile zwrotu "
                                                    "przypada na jednostkę najgorszej straty.", digits=2),
-            B.metric("Największe obsunięcie", s["max_drawdown"], "pct", "Max drawdown"),
+            B.metric("Max drawdown", s["max_drawdown"], "pct"),
         ], "Zwrot i ryzyko"),
         B.metrics([
             B.metric("Beta", s.get("beta"), "num", "Beta", digits=2),
-            B.metric("Alfa roczna", s.get("alpha"), "pct", "Część wyniku, której nie tłumaczy sam ruch benchmarku przemnożony "
-                                                          "przez betę. Dodatnia = wynik ponad to, co dał rynek.", sign=True),
+            B.metric("Alfa (rocznie)", s.get("alpha"), "pct", "Alfa", sign=True),
             B.metric("Korelacja", s.get("correlation"), "num", "Jak blisko portfel chodzi za benchmarkiem: 1 = identycznie, 0 = niezależnie.", digits=2),
-            B.metric("Information ratio", s.get("information_ratio"), "num",
-                     "Nadwyżka nad benchmarkiem podzielona przez jej zmienność (tracking error). Powyżej 0,5 uchodzi za dobre.", digits=2),
+            B.metric("Tracking error", s.get("tracking_error"), "pct"),
+            B.metric("Information ratio", s.get("information_ratio"), "num", digits=2),
             B.metric("Przechwytywanie wzrostów", cap["up"], "x", f"W miesiącach, gdy {bname} rósł, portfel zarabiał średnio tyle razy "
                      f"więcej (lub mniej) niż on. Liczone na {cap['up_months']} miesiącach.", digits=2),
             B.metric("Przechwytywanie spadków", cap["down"], "x", f"W miesiącach spadku benchmarku portfel tracił średnio tyle razy "
                      f"tyle co on. Poniżej 1 = traci mniej niż rynek. Liczone na {cap['down_months']} miesiącach.", digits=2),
-        ], f"Względem benchmarku ({bname})"),
+        ], f"Względem benchmarku: {bname}"),
         B.metrics([
             B.metric("Dodatnie miesiące", ms["positive"], "pct", f"Udział miesięcy z zyskiem ({ms['n']} miesięcy).", digits=0),
             B.metric("Najlepszy miesiąc", ms["best"], "pct", "Najwyższa miesięczna stopa zwrotu w okresie.", sign=True),
             B.metric("Najgorszy miesiąc", ms["worst"], "pct", "Najniższa miesięczna stopa zwrotu w okresie.", sign=True),
-            B.metric("Skośność", s["skew"], "num", "Ujemna = rzadkie, ale duże straty; dodatnia = rzadkie, duże zyski.", digits=2),
+            B.metric("Dni na plusie", s["positive_days"], "pct", digits=0),
+            B.metric("Najlepszy dzień", s["best_day"], "pct", digits=2, sign=True),
+            B.metric("Najgorszy dzień", s["worst_day"], "pct", digits=2, sign=True),
+        ], "Miesiące i dni"),
+        B.metrics([
+            B.metric("Skośność", s["skew"], "num", digits=2),
+            B.metric("Kurtoza", s["kurtosis"], "num", digits=2),
             B.metric("Tail ratio", H.tail_ratio(r), "num", "95. percentyl dziennych zwrotów do 5. percentyla (co do wartości). "
                                                          "Powyżej 1: dobre dni są większe niż złe.", digits=2),
             B.metric("Omega", H.omega(r), "num", "Suma dziennych zysków do sumy dziennych strat. Powyżej 1 = zyski przeważają.", digits=2),
-        ], "Rozkład wyników"),
+        ], "Kształt rozkładu"),
     ]
     if len(roll):
         w = f"{window} sesji"
@@ -87,7 +97,16 @@ def tearsheet(ctx, p) -> dict:
                                   ("depth", "Głębokość", "pct", 1), ("days_down", "Dni do dołka", "int"),
                                   ("days_total", "Dni łącznie", "int")], "Największe obsunięcia",
                               "Każdy epizod od szczytu do odrobienia straty. Dni kalendarzowe.", limit=5))
-    return {"title": "Tearsheet", "blocks": blocks}
+    blocks.append(B.metrics([
+        B.metric("Najdłuższe obsunięcie", s["max_dd_duration_days"], "days", tip="Czas obsunięcia",
+                 note="nadal trwa" if s["dd_longest_ongoing"] else None),
+        B.metric("Odrabianie największego spadku", s["max_dd_recovery_days"] if recovered else None, "days",
+                 tip="Czas odrabiania", note=None if recovered else "jeszcze nie odrobione"),
+    ], "Czas pod wodą"))
+    if s["n_days"] < 500:
+        blocks.append(B.note("Przy historii krótszej niż ok. 2 lata Sharpe, alfa i information ratio mają dużą "
+                             "niepewność. Traktuj je jako orientacyjne."))
+    return {"title": "Statystyki", "blocks": blocks}
 
 
 def _betas(ctx, p) -> pd.Series:
