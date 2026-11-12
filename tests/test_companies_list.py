@@ -12,6 +12,7 @@ from server import blocks as B
 from server.app import create_app
 from server.sessions import SessionStore
 from tests.test_server import check_blocks, strict_json, synthetic_provider
+from tests.helpers import authed_client
 
 
 # --------------------------------------------------------------------------- arytmetyka
@@ -101,7 +102,7 @@ def test_feed_block_drops_unsafe_links():
 
 @pytest.fixture()
 def api():
-    c = create_app(SessionStore(), provider_factory=synthetic_provider).test_client()
+    c = authed_client()
     return c, strict_json(c.post("/api/session", data={"demo": "1"}))["sid"]
 
 
@@ -156,7 +157,7 @@ def test_list_falls_back_to_last_close_when_quotes_fail(monkeypatch):
     def boom(self, row, today=None, parts=()):
         raise RuntimeError("brak sieci")
     monkeypatch.setattr(SyntheticMarketData, "brief", boom)
-    c = create_app(SessionStore(), provider_factory=synthetic_provider).test_client()
+    c = authed_client()
     sid = strict_json(c.post("/api/session", data={"demo": "1"}))["sid"]
     out = strict_json(c.get(f"/api/session/{sid}/screen/companies-list"))
     check_blocks(out["blocks"], {})

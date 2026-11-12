@@ -12,6 +12,7 @@ from server.context import build_context
 from server.sessions import SessionStore
 from tests import real_layout as R
 from tests.test_server import check_blocks, strict_json, synthetic_provider
+from tests.helpers import authed_client
 
 
 # --------------------------------------------------------------------------- odwrócony DCF
@@ -123,7 +124,7 @@ def test_export_between_moves_later_closed_positions_to_open():
 
 @pytest.fixture(scope="module")
 def client():
-    return create_app(SessionStore(), provider_factory=synthetic_provider).test_client()
+    return authed_client()
 
 
 def test_api_view_options_roundtrip(client):

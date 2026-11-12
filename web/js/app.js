@@ -151,8 +151,10 @@ function show(node) {
 function showLogin() {
   tabsEl.hidden = true;
   subnav.hidden = true;
+  const vb = document.getElementById("viewbar");
+  if (vb) vb.hidden = true;
   drawBar("XTB Analytics");
-  show(loginView(() => start()));
+  show(loginView(({ moved } = {}) => { if (moved) location.hash = "#/import"; start(); }));
 }
 
 function reloadAll() {
@@ -288,7 +290,17 @@ async function boot() {
     show(el("div", { class: "screen" }, el("div", { style: "height:22vh" }), errorNote(err), retry));
     return;
   }
-  if (api.state.health.auth_required && !api.state.token) return showLogin();
+  let ok = false;
+  try {
+    ok = await api.restore();
+  } catch (err) {
+    if (err.code === "vault_key") return showLogin();
+    const retry = el("button", { class: "btn quiet", type: "button" }, "Spróbuj ponownie");
+    retry.addEventListener("click", () => { bootMessage("Łączę z serwerem…"); boot(); });
+    show(el("div", { class: "screen" }, el("div", { style: "height:22vh" }), errorNote(err), retry));
+    return;
+  }
+  if (!ok) return showLogin();
   start();
 }
 

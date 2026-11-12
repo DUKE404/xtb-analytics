@@ -13,15 +13,41 @@ pw = pytest.importorskip("playwright.sync_api")
 VIEWPORT = {"width": 390, "height": 844}
 
 
+UI_USER, UI_PASSWORD = "tester", "test-haslo-123"
+UI_ITERATIONS = 2000            # w aplikacji 600 000; w testach mniej, żeby logowanie było szybkie
+
+
+def derive_auth_key(password: str, salt_hex: str, iterations: int) -> str:
+    """To samo wyprowadzenie co web/js/vault.js (PBKDF2-SHA256 + HKDF "xtba-auth-v1") - w Pythonie.
+    Konto założone tą funkcją loguje się w przeglądarce tylko wtedy, gdy obie implementacje dają ten sam klucz."""
+    import hashlib
+    import unicodedata
+
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    salt = bytes.fromhex(salt_hex)
+    master = hashlib.pbkdf2_hmac("sha256", unicodedata.normalize("NFKC", password).encode(), salt, iterations, 32)
+    return HKDF(algorithm=hashes.SHA256(), length=32, salt=salt, info=b"xtba-auth-v1").derive(master).hex()
+
+
 @pytest.fixture(scope="module")
-def base_url():
+def accounts():
+    from tests.helpers import make_accounts
+    acc = make_accounts(iterations=UI_ITERATIONS)
+    salt = "5a" * 16
+    acc.register(UI_USER, derive_auth_key(UI_PASSWORD, salt, UI_ITERATIONS), salt)
+    return acc
+
+
+@pytest.fixture(scope="module")
+def base_url(accounts):
     from werkzeug.serving import make_server
 
     from server.app import create_app
     from server.sessions import SessionStore
     from tests.test_server import synthetic_provider
 
-    app = create_app(SessionStore(), provider_factory=synthetic_provider)
+    app = create_app(SessionStore(), provider_factory=synthetic_provider, accounts=accounts)
     srv = make_server("127.0.0.1", 0, app, threaded=True)
     thread = threading.Thread(target=srv.serve_forever, daemon=True)
     thread.start()
@@ -45,18 +71,41 @@ def browser():
         b.close()
 
 
+def clean_vault(accounts):
+    """Każdy test zaczyna z pustym sejfem konta testowego (pliki i ustawienia nie przechodzą między testami)."""
+    accounts.db.execute("DELETE FROM vault_items")
+
+
 @pytest.fixture()
-def page(browser, base_url):
+def page(browser, base_url, accounts):
+    clean_vault(accounts)
     ctx = browser.new_context(viewport=VIEWPORT, device_scale_factor=2, is_mobile=True, has_touch=True, locale="pl-PL",
-                              service_workers="block")
+                              service_workers="block", bypass_csp=True)
     pg = ctx.new_page()
     pg.errors = []
     pg.on("pageerror", lambda e: pg.errors.append(f"pageerror: {e}"))
     pg.on("console", lambda m: pg.errors.append(f"console: {m.text}") if m.type == "error" else None)
     pg.goto(base_url + "/")
+    ui_login(pg)
     wait_ready(pg)
     yield pg
     ctx.close()
+
+
+def ui_login(pg, user=UI_USER, password=UI_PASSWORD):
+    pg.wait_for_selector(".login-form", timeout=60000)
+    pg.fill("input[autocomplete=username]", user)
+    pg.fill("input[type=password]", password)
+    pg.locator(".login-form button[type=submit]").click()
+
+
+def new_page(browser, base_url, **kw):
+    ctx = browser.new_context(viewport=VIEWPORT, locale="pl-PL", service_workers="block", bypass_csp=True, **kw)
+    pg = ctx.new_page()
+    pg.errors = []
+    pg.on("pageerror", lambda e: pg.errors.append(f"pageerror: {e}"))
+    pg.goto(base_url + "/")
+    return ctx, pg
 
 
 def wait_ready(pg):
@@ -396,9 +445,10 @@ def test_ai_hidden_without_key(page, base_url, monkeypatch):
 
 def test_app_shell_opens_offline_from_service_worker(browser, base_url):
     """Po pierwszej wizycie powłoka aplikacji otwiera się bez sieci (np. gdy darmowy serwer jeszcze śpi)."""
-    ctx = browser.new_context(viewport=VIEWPORT, is_mobile=True, has_touch=True, locale="pl-PL")
+    ctx = browser.new_context(viewport=VIEWPORT, is_mobile=True, has_touch=True, locale="pl-PL", bypass_csp=True)
     pg = ctx.new_page()
     pg.goto(base_url + "/")
+    ui_login(pg)
     wait_ready(pg)
     pg.wait_for_function("navigator.serviceWorker.controller !== null || navigator.serviceWorker.ready.then(() => true)", timeout=20000)
     pg.evaluate("navigator.serviceWorker.ready")
@@ -419,13 +469,15 @@ def test_app_shell_opens_offline_from_service_worker(browser, base_url):
 # --------------------------------------------------------------------------- szeroki ekran i nowe funkcje widoku
 
 @pytest.fixture()
-def desktop(browser, base_url):
-    ctx = browser.new_context(viewport={"width": 1440, "height": 900}, locale="pl-PL", service_workers="block")
+def desktop(browser, base_url, accounts):
+    clean_vault(accounts)
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900}, locale="pl-PL", service_workers="block", bypass_csp=True)
     pg = ctx.new_page()
     pg.errors = []
     pg.on("pageerror", lambda e: pg.errors.append(f"pageerror: {e}"))
     pg.on("console", lambda m: pg.errors.append(f"console: {m.text}") if m.type == "error" else None)
     pg.goto(base_url + "/")
+    ui_login(pg)
     wait_ready(pg)
     yield pg
     ctx.close()
@@ -553,3 +605,171 @@ def test_companies_list_on_phone(page, base_url):
     assert "za " in first or "dziś" in first or "jutro" in first
     shot(page, "94-companies-list")
     assert not page.errors, page.errors
+
+
+def test_app_runs_under_strict_content_security_policy(browser, base_url):
+    """Bez obejścia CSP: logowanie (WebCrypto), ekrany z wykresami i tabelami - zero naruszeń polityki."""
+    ctx = browser.new_context(viewport=VIEWPORT, locale="pl-PL", service_workers="block")
+    pg = ctx.new_page()
+    violations = []
+    pg.on("console", lambda m: violations.append(m.text) if "Content Security Policy" in m.text else None)
+    pg.add_init_script("document.addEventListener('securitypolicyviolation', e => console.error('Content Security Policy: ' + e.violatedDirective + ' ' + e.blockedURI))")
+    pg.goto(base_url + "/")
+    ui_login(pg)
+    wait_ready(pg)
+    for h in ("#/perf/perf-summary", "#/risk/risk-var", "#/companies", "#/sim/sim-montecarlo", "#/import/settings"):
+        pg.evaluate(f"location.hash = '{h}'")
+        wait_ready(pg)
+    assert pg.locator("svg").count() > 0
+    assert not violations, violations
+    ctx.close()
+
+
+# --------------------------------------------------------------------------- konta, sejf, szyfrowanie
+
+def _upload_usd(pg, tmp_path):
+    from tests import real_layout as R
+    pg.goto(pg.url.split("#")[0] + "#/import/import")
+    pg.wait_for_selector(".drop input")
+    path = tmp_path / R.usd_account()[0]
+    path.write_bytes(R.usd_account()[1])
+    pg.set_input_files(".drop input", str(path))
+    pg.wait_for_function("document.querySelector('.statement')?.textContent.includes('własny eksport')", timeout=90000)
+    return R
+
+
+def test_wrong_password_is_rejected(browser, base_url, accounts):
+    ctx, pg = new_page(browser, base_url)
+    ui_login(pg, password="zle-haslo-000")
+    pg.wait_for_selector(".login-msg > *", timeout=30000)
+    assert "Nieprawidłowa nazwa użytkownika lub hasło" in pg.inner_text(".login-form")
+    accounts.db.execute("UPDATE users SET failed = 0, locked_until = 0")
+    ctx.close()
+
+
+def test_portfolio_follows_the_account_to_another_device_and_is_encrypted(browser, base_url, accounts, tmp_path):
+    clean_vault(accounts)
+    ctx, pg = new_page(browser, base_url)
+    ui_login(pg)
+    wait_ready(pg)
+    R = _upload_usd(pg, tmp_path)
+    pg.locator("#bar-meta .view-btn").click()
+    pg.wait_for_selector(".sheet")
+    pg.locator(".sheet .segmented button", has_text="USD").click()
+    pg.locator(".sheet .btn", has_text="Zastosuj").click()
+    pg.wait_for_selector(".sheet", state="detached", timeout=90000)
+    wait_ready(pg)
+    pg.wait_for_timeout(1500)                                  # ustawienia trafiają do sejfu z krótkim opóźnieniem
+    # w bazie tylko szyfrogramy: ani nazwy pliku (z numerem rachunku), ani treści arkusza, ani ustawień
+    rows = accounts.db.all("SELECT item_key, data FROM vault_items")
+    assert {r["item_key"] for r in rows} >= {"prefs"} and len(rows) == 2
+    blob = " ".join(r["item_key"] + r["data"] for r in rows)
+    import base64
+    raw = b"".join(base64.b64decode(r["data"]) for r in rows)
+    for secret in (R.USD_ACC, "USD_", "Closed Positions", "RKLB"):
+        assert secret not in blob and secret.encode() not in raw
+    assert b"PK\x03\x04" not in raw                             # xlsx (zip) nie leży jawnie
+    ctx.close()
+    # inne urządzenie: logowanie i ten sam portfel z tymi samymi ustawieniami
+    ctx2, pg2 = new_page(browser, base_url)
+    ui_login(pg2)
+    wait_ready(pg2)
+    assert "USD" in pg2.inner_text("#bar-meta .view-btn") and "dane przykładowe" not in pg2.inner_text("#bar-meta")
+    pg2.goto(base_url + "/#/import/import")
+    pg2.wait_for_selector(".ledger .link-btn")
+    assert R.USD_ACC in pg2.inner_text("main")
+    # wylogowanie czyści urządzenie: po odświeżeniu znowu ekran logowania, a w pamięci przeglądarki nie ma plików
+    pg2.goto(base_url + "/#/import/settings")
+    pg2.locator(".btn", has_text="Wyloguj").first.wait_for()
+    pg2.locator(".account .btn", has_text="Wyloguj").last.click()
+    pg2.wait_for_selector(".login-form")
+    pg2.reload()
+    pg2.wait_for_selector(".login-form")
+    leftovers = pg2.evaluate("Object.keys(localStorage).filter(k => k.startsWith('xtba:'))")
+    assert leftovers == [], leftovers
+    assert not pg2.errors, pg2.errors
+    ctx2.close()
+
+
+def test_files_from_previous_version_move_into_the_vault(browser, base_url, accounts, tmp_path):
+    """Telefon z poprzednią wersją (pliki w IndexedDB bez szyfrowania): po zalogowaniu pliki trafiają do sejfu
+    i znikają z urządzenia."""
+    from tests import real_layout as R
+    clean_vault(accounts)
+    ctx, pg = new_page(browser, base_url)
+    pg.wait_for_selector(".login-form")
+    name, data = R.usd_account()
+    pg.evaluate("""([name, bytes]) => new Promise((ok, fail) => {
+        const req = indexedDB.open('xtb-analytics', 1);
+        req.onupgradeneeded = () => req.result.createObjectStore('files', { keyPath: 'name' });
+        req.onsuccess = () => {
+            const t = req.result.transaction('files', 'readwrite');
+            t.objectStore('files').put({ name, type: '', data: new Uint8Array(bytes).buffer });
+            t.oncomplete = () => { req.result.close(); ok(); };
+        };
+        req.onerror = fail;
+    })""", [name, list(data)])
+    ui_login(pg)
+    pg.wait_for_function("document.querySelector('.statement')?.textContent.includes('własny eksport')", timeout=90000)
+    assert accounts.db.one("SELECT COUNT(*) AS n FROM vault_items WHERE item_key LIKE 'f_%'")["n"] == 1
+    pg.wait_for_timeout(300)
+    assert "xtb-analytics" not in pg.evaluate("indexedDB.databases().then(d => d.map(x => x.name))")
+    ctx.close()
+
+
+def test_invite_registration_and_password_change(browser, base_url, accounts):
+    clean_vault(accounts)
+    # administrator generuje kod w ustawieniach
+    ctx, pg = new_page(browser, base_url)
+    ui_login(pg)
+    wait_ready(pg)
+    pg.goto(base_url + "/#/import/settings")
+    pg.wait_for_selector(".account .btn", timeout=30000)
+    assert "administrator" in pg.inner_text(".account")
+    pg.locator(".btn", has_text="Wygeneruj kod zaproszenia").click()
+    pg.wait_for_selector(".invite-code")
+    code = pg.inner_text(".invite-code")
+    assert len(code) == 14
+    shot(pg, "a1-settings-account")
+    ctx.close()
+    # nowa osoba zakłada konto kodem
+    ctx2, pg2 = new_page(browser, base_url)
+    pg2.wait_for_selector(".login-form")
+    pg2.locator(".link-btn", has_text="Mam kod zaproszenia").click()
+    pg2.wait_for_selector("input[autocomplete=new-password]")
+    pg2.fill("input[autocomplete=username]", "bartek")
+    pw = pg2.locator("input[type=password]")
+    pw.nth(0).fill("krotkie")
+    pw.nth(1).fill("krotkie")
+    pg2.fill("input[placeholder^='np.']", code)
+    pg2.locator(".login-form button[type=submit]").click()
+    assert "co najmniej 10 znaków" in pg2.inner_text(".login-form")            # walidacja w telefonie
+    pw.nth(0).fill("bartek-ma-dobre-haslo")
+    pw.nth(1).fill("bartek-ma-dobre-haslo")
+    shot(pg2, "a2-register", full=False)
+    pg2.locator(".login-form button[type=submit]").click()
+    wait_ready(pg2)
+    bart = accounts.db.one("SELECT id, is_admin FROM users WHERE username = 'bartek'")
+    assert bart and not bart["is_admin"]
+    # zmiana hasła: sejf szyfrowany od nowa, stare hasło przestaje działać
+    pg2.wait_for_timeout(1200)
+    before = accounts.db.one("SELECT data FROM vault_items WHERE user_id = ? AND item_key = 'prefs'", (bart["id"],))
+    pg2.goto(base_url + "/#/import/settings")
+    pg2.locator(".btn", has_text="Zmień hasło").click()
+    sheet = pg2.locator(".sheet input[type=password]")
+    sheet.nth(0).fill("bartek-ma-dobre-haslo")
+    sheet.nth(1).fill("nowe-haslo-bartka-1")
+    sheet.nth(2).fill("nowe-haslo-bartka-1")
+    pg2.locator(".sheet .btn").click()
+    pg2.locator(".account .note", has_text="Hasło zmienione").wait_for(timeout=60000)
+    after = accounts.db.one("SELECT data FROM vault_items WHERE user_id = ? AND item_key = 'prefs'", (bart["id"],))
+    assert before is None or after["data"] != before["data"]
+    assert not pg2.errors, pg2.errors
+    ctx2.close()
+    ctx3, pg3 = new_page(browser, base_url)
+    ui_login(pg3, "bartek", "bartek-ma-dobre-haslo")
+    pg3.wait_for_selector(".login-msg > *")
+    ui_login(pg3, "bartek", "nowe-haslo-bartka-1")
+    wait_ready(pg3)
+    ctx3.close()
+    accounts.delete_user(bart["id"])

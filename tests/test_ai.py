@@ -8,6 +8,7 @@ from server.app import create_app
 from server.screens import Params
 from server.sessions import SessionStore
 from tests.test_server import synthetic_provider
+from tests.helpers import authed_client
 
 
 class FakeResponse:
@@ -110,7 +111,7 @@ def test_errors_are_readable(monkeypatch):
 
 def test_endpoints_disabled_without_key(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    c = create_app(SessionStore(), provider_factory=synthetic_provider).test_client()
+    c = authed_client()
     h = c.get("/api/health").get_json()
     assert h["ai_enabled"] is False and "ai" not in [m["id"] for m in h["nav"]["more"]]
     sid = c.post("/api/session", data={"demo": "1"}).get_json()["sid"]
@@ -122,7 +123,7 @@ def test_endpoints_disabled_without_key(monkeypatch):
 
 
 def test_endpoints_with_key(calls):
-    c = create_app(SessionStore(), provider_factory=synthetic_provider).test_client()
+    c = authed_client()
     h = c.get("/api/health").get_json()
     assert h["ai_enabled"] is True and "ai" in [m["id"] for m in h["nav"]["more"]]
     sid = c.post("/api/session", data={"demo": "1"}).get_json()["sid"]

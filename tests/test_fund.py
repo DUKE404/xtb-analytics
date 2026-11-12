@@ -7,6 +7,7 @@ from core import hedgefund as H
 from server.app import create_app
 from server.sessions import SessionStore
 from tests.test_server import check_blocks, strict_json, synthetic_provider
+from tests.helpers import authed_client
 
 
 def _daily(monthly: list[float], start="2025-01-01") -> pd.Series:
@@ -95,7 +96,7 @@ def test_limits_status():
 
 @pytest.fixture(scope="module")
 def api():
-    c = create_app(SessionStore(), provider_factory=synthetic_provider).test_client()
+    c = authed_client()
     return c, strict_json(c.post("/api/session", data={"demo": "1"}))["sid"]
 
 

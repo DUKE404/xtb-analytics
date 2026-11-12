@@ -8,6 +8,7 @@ import pytest
 from server.app import create_app
 from server.screens import NAV, SCREENS
 from server.sessions import SessionStore
+from tests.helpers import authed_client
 
 CHART_TYPES = {"line", "hbar", "bars", "heatmap", "hist", "fan"}
 FMTS = {"zl", "pln", "pct", "num", "int", "days", "x", "text"}
@@ -20,8 +21,7 @@ def synthetic_provider(is_demo):
 
 @pytest.fixture(scope="module")
 def client():
-    app = create_app(SessionStore(), provider_factory=synthetic_provider)
-    return app.test_client()
+    return authed_client(synthetic_provider)
 
 
 @pytest.fixture(scope="module")
@@ -99,7 +99,7 @@ def check_blocks(blocks, counts):
 
 def test_health_and_nav(client):
     h = client.get("/api/health").get_json()
-    assert h["ok"] and h["auth_required"] is False
+    assert h["ok"] and h["auth_required"] is True
     listed = [s["id"] for tab in h["nav"]["tabs"] for s in tab["screens"]]
     assert set(listed) <= set(SCREENS), "nawigacja wskazuje na nieistniejący ekran"
     assert len(h["nav"]["tabs"]) <= 4            # + "Więcej" = maks. 5 pozycji na dolnym pasku
@@ -207,23 +207,6 @@ def test_upload_errors_are_readable(client):
     assert r.status_code == 422 and "Nie rozpoznano" in r.get_json()["error"]
     r = client.post("/api/session", data={})
     assert r.status_code == 400 and r.get_json()["code"] == "no_file"
-
-
-def test_password_protection(monkeypatch):
-    monkeypatch.setenv("APP_PASSWORD", "tajne-haslo")
-    c = create_app(SessionStore(), provider_factory=synthetic_provider).test_client()
-    assert c.get("/api/health").get_json()["auth_required"] is True
-    assert c.post("/api/session", data={"demo": "1"}).status_code == 401
-    assert c.post("/api/login", json={"password": "zle"}).status_code == 401
-    token = c.post("/api/login", json={"password": "tajne-haslo"}).get_json()["token"]
-    assert len(token) == 64
-    r = c.post("/api/session", data={"demo": "1"}, headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 201
-    assert c.get(f"/api/session/{r.get_json()['sid']}/screen/overview").status_code == 401
-    assert c.get("/").status_code == 200          # powłoka aplikacji jest publiczna, dane nie
-    for _ in range(8):
-        c.post("/api/login", json={"password": "zle"})
-    assert c.post("/api/login", json={"password": "zle"}).status_code == 429
 
 
 def test_session_store_evicts_oldest_and_expires():

@@ -17,6 +17,7 @@ from server.sessions import SessionStore
 from tests import real_layout as R
 from tests.conftest import make_frames
 from tests.test_server import check_blocks, strict_json, synthetic_provider
+from tests.helpers import authed_client
 
 
 @pytest.fixture(scope="module")
@@ -290,7 +291,7 @@ def test_currency_exposure_counts_cash_per_currency():
 
 @pytest.fixture(scope="module")
 def client():
-    return create_app(SessionStore(), provider_factory=synthetic_provider).test_client()
+    return authed_client()
 
 
 def _upload(client, files, **form):

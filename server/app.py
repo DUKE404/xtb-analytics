@@ -4,8 +4,14 @@ Uruchomienie lokalne:  python -m server            (http://localhost:8000)
 Produkcja (Render):    gunicorn server.app:app     (patrz render.yaml)
 
 Zmienne środowiskowe:
-  APP_PASSWORD        - jeśli ustawione, aplikacja wymaga hasła (zalecane przy publicznym adresie)
+  DATABASE_URL        - baza kont i zaszyfrowanych portfeli (Postgres, np. Neon). Bez niej: plik SQLite w .cache/
+                        - na darmowym Render znika przy uśpieniu, więc tam DATABASE_URL jest konieczne.
+  APP_PASSWORD        - kod konfiguracji: potrzebny do założenia pierwszego konta (administratora)
+  SECRET_KEY          - sekret serwera (losowy, generowany przez Render)
   ANTHROPIC_API_KEY   - włącza dział AI (memo ryzyka, czat)
+
+Każde żądanie do /api/ poza logowaniem wymaga tokenu konta (nagłówek Authorization: Bearer ...).
+Szczegóły modelu bezpieczeństwa: server/accounts.py.
 """
 from __future__ import annotations
 
@@ -17,11 +23,13 @@ import time
 import traceback
 
 import pandas as pd
-from flask import Flask, Response, request, send_from_directory
+from flask import Flask, Response, g, request, send_from_directory
 from werkzeug.exceptions import HTTPException
 
 from data.xtb_parser import XTBFormatError
 from server import blocks as B
+from server.accounts import Accounts, AuthError
+from server.db import Database
 from server.blocks import jsonable
 from data.loader import BASE_CHOICES, SINCE_PRESETS
 from server.context import BENCH_CHOICES, DEFAULT_BENCH, DEFAULT_RF, build_context
@@ -52,12 +60,16 @@ class ApiError(Exception):
         self.message, self.status, self.code = message, status, code
 
 
-def _token(password: str) -> str:
-    return hmac.new(password.encode(), b"xtb-analytics-session-v1", hashlib.sha256).hexdigest()
+PUBLIC_API = {"/api/health", "/api/auth/status", "/api/auth/params", "/api/auth/login", "/api/auth/register"}
+
+# Polityka treści: tylko własne skrypty i połączenia; style inline potrzebne do kolorów wykresów (atrybut style).
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+       "font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; "
+       "base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 
 
-def create_app(store: SessionStore | None = None, provider_factory=None) -> Flask:
-    """provider_factory(is_demo) pozwala testom podstawić dostawcę notowań (bez sieci)."""
+def create_app(store: SessionStore | None = None, provider_factory=None, accounts: Accounts | None = None) -> Flask:
+    """provider_factory(is_demo) pozwala testom podstawić dostawcę notowań (bez sieci); accounts - bazę kont."""
     try:
         from dotenv import load_dotenv
         load_dotenv(os.path.join(ROOT, ".env"))
@@ -70,10 +82,12 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
     app.json.ensure_ascii = False
     sessions = store or SessionStore()
     app.extensions["sessions"] = sessions
-    login_attempts: dict[str, list[float]] = {}
+    users = accounts or Accounts(Database())
+    app.extensions["accounts"] = users
 
-    def password() -> str:
-        return os.environ.get("APP_PASSWORD", "").strip()
+    def client_ip() -> str:
+        # Render stawia aplikację za własnym serwerem pośredniczącym: pierwszy adres z X-Forwarded-For to klient
+        return request.headers.get("X-Forwarded-For", request.remote_addr or "?").split(",")[0].strip()[:64]
 
     def ai_enabled() -> bool:
         from core import ai
@@ -84,7 +98,7 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
                         status=status, mimetype="application/json")
 
     def get_ctx(sid: str):
-        ctx = sessions.get(sid)
+        ctx = sessions.get(sid, owner=g.user["id"])          # sesja analizy innego konta jest niewidoczna
         if ctx is None:
             raise ApiError("Sesja wygasła - aplikacja odtworzy ją automatycznie.", 404, "session_expired")
         return ctx
@@ -123,6 +137,10 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
     def _api_error(exc: ApiError):
         return ok({"error": exc.message, "code": exc.code}, exc.status)
 
+    @app.errorhandler(AuthError)
+    def _auth_error(exc: AuthError):
+        return ok({"error": exc.message, "code": exc.code}, exc.status)
+
     @app.errorhandler(413)
     def _too_large(_):
         return ok({"error": f"Plik jest za duży (limit {MAX_UPLOAD_MB} MB).", "code": "too_large"}, 413)
@@ -142,23 +160,28 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
 
     @app.before_request
     def _auth():
-        if not request.path.startswith("/api/") or request.path in ("/api/health", "/api/login"):
-            return None
-        pw = password()
-        if not pw:
+        g.user = None
+        if not request.path.startswith("/api/") or request.path in PUBLIC_API:
             return None
         header = request.headers.get("Authorization", "")
-        supplied = header[7:] if header.startswith("Bearer ") else ""
-        if not hmac.compare_digest(supplied, _token(pw)):
-            return ok({"error": "Podaj hasło do aplikacji.", "code": "auth_required"}, 401)
+        g.user = users.authenticate(header[7:].strip() if header.startswith("Bearer ") else "")
+        if g.user is None:
+            return ok({"error": "Zaloguj się.", "code": "auth_required"}, 401)
         return None
 
     @app.after_request
     def _headers(resp: Response):
         if request.path.startswith("/api/"):
             resp.headers["Cache-Control"] = "no-store"
-        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
-        resp.headers.setdefault("Referrer-Policy", "no-referrer")
+        h = resp.headers
+        h.setdefault("X-Content-Type-Options", "nosniff")
+        h.setdefault("Referrer-Policy", "no-referrer")
+        h.setdefault("X-Frame-Options", "DENY")
+        h.setdefault("Content-Security-Policy", CSP)
+        h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+        h.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        if request.headers.get("X-Forwarded-Proto", request.scheme) == "https":
+            h.setdefault("Strict-Transport-Security", "max-age=31536000")
         return resp
 
     # ------------------------------------------------------------------ API
@@ -166,26 +189,112 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
 
     @app.get("/api/health")
     def health():
-        return ok({"ok": True, "version": VERSION, "build": build, "auth_required": bool(password()), "ai_enabled": ai_enabled(),
+        return ok({"ok": True, "version": VERSION, "build": build, "auth_required": True, "ai_enabled": ai_enabled(),
                    "nav": nav_config(ai_enabled()),
                    "settings": {"rf": DEFAULT_RF, "bench": DEFAULT_BENCH, "bench_choices": [
                        {"value": k, "label": _bench_label(k)} for k in BENCH_CHOICES]}})
 
-    @app.post("/api/login")
-    def login():
-        pw = password()
-        if not pw:
-            return ok({"token": ""})
-        ip = request.headers.get("X-Forwarded-For", request.remote_addr or "?").split(",")[0].strip()
-        now = time.time()
-        recent = [t for t in login_attempts.get(ip, []) if now - t < 60]
-        if len(recent) >= 8:
-            raise ApiError("Za dużo prób. Odczekaj minutę.", 429, "rate_limited")
-        supplied = str((request.get_json(silent=True) or {}).get("password", ""))
-        if not hmac.compare_digest(supplied.encode(), pw.encode()):
-            login_attempts[ip] = recent + [now]
-            raise ApiError("Nieprawidłowe hasło.", 401, "bad_password")
-        return ok({"token": _token(pw)})
+    # ------------------------------------------------------------------ konta
+    def body() -> dict:
+        data = request.get_json(silent=True)
+        return data if isinstance(data, dict) else {}
+
+    def agent() -> str:
+        return request.headers.get("User-Agent", "")[:160]
+
+    def drop_sessions_of(uid: str) -> None:
+        sessions.drop_owner(uid)
+
+    @app.get("/api/auth/status")
+    def auth_status():
+        return ok(users.status())
+
+    @app.get("/api/auth/params")
+    def auth_params():
+        return ok(users.params(request.args.get("u", "")))
+
+    @app.post("/api/auth/register")
+    def auth_register():
+        d = body()
+        out = users.register(d.get("username"), d.get("auth_key"), d.get("salt"), d.get("invite", ""), client_ip(), agent())
+        return ok(out, 201)
+
+    @app.post("/api/auth/login")
+    def auth_login():
+        d = body()
+        return ok(users.login(d.get("username"), d.get("auth_key"), client_ip(), agent()))
+
+    @app.get("/api/auth/me")
+    def auth_me():
+        return ok(users.user(g.user["id"]) | {"storage": users.db.label, "persistent": users.db.persistent})
+
+    @app.post("/api/auth/logout")
+    def auth_logout():
+        users.logout(g.user["token_hash"])
+        drop_sessions_of(g.user["id"]) if not body().get("keep_analysis") else None
+        return ok({"ok": True})
+
+    @app.post("/api/auth/logout-others")
+    def auth_logout_others():
+        return ok({"ended": users.logout_all(g.user["id"], keep=g.user["token_hash"])})
+
+    @app.post("/api/auth/password")
+    def auth_password():
+        d = body()
+        out = users.change_password(g.user["id"], d.get("auth_key"), d.get("new_auth_key"), d.get("new_salt"),
+                                    d.get("items") or [], keep_token=g.user["token_hash"])
+        return ok(out)
+
+    @app.delete("/api/auth/account")
+    def auth_delete():
+        users.delete_account(g.user["id"], body().get("auth_key"))
+        drop_sessions_of(g.user["id"])
+        return ok({"ok": True})
+
+    # ------------------------------------------------------------------ sejf (zaszyfrowane pliki i ustawienia)
+    @app.get("/api/vault")
+    def vault_list():
+        return ok({"items": users.vault_list(g.user["id"])})
+
+    @app.put("/api/vault/<key>")
+    def vault_put(key):
+        d = body()
+        return ok(users.vault_put(g.user["id"], key, d.get("iv"), d.get("data")))
+
+    @app.delete("/api/vault/<key>")
+    def vault_delete(key):
+        users.vault_delete(g.user["id"], key)
+        return ok({"ok": True})
+
+    # ------------------------------------------------------------------ administrator: zaproszenia i konta
+    def admin() -> dict:
+        if not g.user["is_admin"]:
+            raise ApiError("Tylko administrator może to zrobić.", 403, "forbidden")
+        return g.user
+
+    @app.get("/api/admin/invites")
+    def invites_list():
+        admin()
+        return ok({"invites": users.list_invites(), "users": users.list_users()})
+
+    @app.post("/api/admin/invites")
+    def invites_create():
+        return ok(users.create_invite(admin()["id"], body().get("note", "")), 201)
+
+    @app.delete("/api/admin/invites/<iid>")
+    def invites_delete(iid):
+        admin()
+        users.delete_invite(iid)
+        return ok({"ok": True})
+
+    @app.delete("/api/admin/users/<uid>")
+    def users_delete(uid):
+        me = admin()
+        if uid == me["id"]:
+            raise ApiError("Własne konto usuniesz w ustawieniach konta.", 400, "self")
+        users.delete_user(uid)
+        drop_sessions_of(uid)
+        return ok({"ok": True})
 
     @app.post("/api/session")
     def create_session():
@@ -201,7 +310,7 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
         ctx = make_ctx(files, overrides, _base(request.form.get("base")), exclude=_accounts(request.form.get("exclude")),
                        exclude_cfd=request.form.get("exclude_cfd") in ("1", "true"), since=_since(request.form.get("since")),
                        until=_date(request.form.get("until")))
-        sid = sessions.put(ctx)
+        sid = sessions.put(ctx, owner=g.user["id"])
         return ok(session_meta(sid, ctx), 201)
 
     @app.get("/api/session/<sid>")
@@ -210,7 +319,7 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
 
     @app.delete("/api/session/<sid>")
     def delete_session(sid):
-        sessions.drop(sid)
+        sessions.drop(sid, owner=g.user["id"])
         return ok({"ok": True})
 
     @app.put("/api/session/<sid>/mapping")
@@ -223,7 +332,7 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
         ctx = make_ctx(None if old.is_demo else old.files, overrides, old.base,
                        [a["id"] for a in old.accounts if a["selected"]], old.parsed,
                        exclude_cfd=old.exclude_cfd, since=old.since, until=old.until)
-        sessions.put(ctx, sid)
+        sessions.put(ctx, sid, owner=g.user["id"])
         return ok(session_meta(sid, ctx))
 
     @app.put("/api/session/<sid>/view")
@@ -243,7 +352,7 @@ def create_app(store: SessionStore | None = None, provider_factory=None) -> Flas
         since = _since(body["since"]) if "since" in body else old.since
         ctx = make_ctx(None if old.is_demo else old.files, old.overrides, base, accounts, old.parsed,
                        exclude_cfd=exclude_cfd, since=since, until=_date(body["until"]) if "until" in body else old.until)
-        sessions.put(ctx, sid)
+        sessions.put(ctx, sid, owner=g.user["id"])
         return ok(session_meta(sid, ctx))
 
     @app.route("/api/session/<sid>/screen/<name>", methods=["GET", "POST"])

@@ -329,3 +329,33 @@ wyceniony jak akcja lub po złym poziomie cen. Pliku nie widziałem, dlatego pop
   kwoty do grosza - pod polskiego Excela.
 - **Cache**: katalog z `CACHE_DIR`. Darmowego planu Render nie da się tym przyspieszyć (dysk znika po uśpieniu) -
   to ograniczenie hostingu, opisane w `render.yaml`.
+
+## Konta, sejf i bezpieczeństwo
+
+Decyzje użytkownika: konta dla niego i kilku osób (kody zaproszeń), baza Neon (darmowy Postgres), szyfrowanie
+kluczem z hasła użytkownika.
+
+- **Baza**: `DATABASE_URL` (Postgres) albo plik SQLite. Darmowy Render nie ma trwałego dysku, a jego darmowa baza
+  wygasa po 30 dniach - stąd Neon. Ten sam SQL dla obu baz; testy przechodzą na SQLite i na Postgresie 16.
+- **Kryptografia w telefonie** (WebCrypto): PBKDF2-SHA256 600 000 iteracji (zalecenie OWASP) → klucz główny →
+  HKDF-SHA256: `xtba-auth-v1` (klucz logowania, na serwer) i `xtba-enc-v1` (AES-256-GCM, zostaje w telefonie).
+  Każdy element sejfu: losowy 96-bitowy IV, identyfikator elementu jako dane uwierzytelniane (AAD). Zgodność
+  wyprowadzenia JS z Pythonem sprawdza test w przeglądarce (konto założone w Pythonie loguje się w Chrome).
+- **Serwer** przechowuje scrypt(klucz logowania) (N=2^14, r=8, p=1), skróty SHA-256 tokenów i szyfrogramy.
+  Dla nieistniejącego konta zwraca stałą udawaną sól (HMAC z SECRET_KEY) i liczy scrypt, żeby nie zdradzać,
+  kto ma konto.
+- **Pierwsze konto** wymaga kodu konfiguracji = dotychczasowe `APP_PASSWORD` (gdy ustawione). Bez tego ktoś mógłby
+  założyć konto administratora na świeżo wdrożonym serwerze przed właścicielem. Każde następne - jednorazowy kod
+  zaproszenia (60 bitów, w bazie tylko skrót, ważny 7 dni).
+- **Brak resetu hasła** - konsekwencja szyfrowania kluczem z hasła; utrata danych jest odwracalna (ponowny eksport).
+- **Zmiana hasła** szyfruje cały sejf od nowa w telefonie i podmienia go w jednej transakcji; serwer sprawdza,
+  że przyszły dokładnie te same elementy, które ma (inaczej 409 - sejf zmienił się w trakcie).
+- **Ustawienia** (tryb, poprawki tickerów, waluta, okres, rachunki) są w sejfie; przy konflikcie wygrywa nowsza
+  wersja (znacznik czasu w zaszyfrowanej treści).
+- **Migracja**: pliki z IndexedDB poprzedniej wersji są po zalogowaniu przenoszone do pustego sejfu i usuwane
+  z urządzenia.
+- **CSP** `script-src 'self'`; style inline dozwolone, bo wykresy ustawiają kolory atrybutem style.
+  HSTS tylko przy HTTPS (nagłówek X-Forwarded-Proto od Render).
+- **Limit prób z adresu IP** opiera się na X-Forwarded-For; jest drugą linią obrony - pierwszą jest blokada konta.
+- **Granica**: odszyfrowane pliki trafiają na serwer na czas sesji analizy (w pamięci, max 3 h, kasowane przy
+  wylogowaniu). Liczenie wszystkiego w telefonie wymagałoby przepisania silnika - poza zakresem.

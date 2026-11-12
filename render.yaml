@@ -13,8 +13,12 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
-      - key: APP_PASSWORD        # hasło do aplikacji - Render zapyta o nie przy tworzeniu usługi
+      - key: DATABASE_URL        # baza kont i zaszyfrowanych portfeli: connection string z Neon (postgresql://...)
         sync: false
+      - key: APP_PASSWORD        # kod konfiguracji: potrzebny do założenia pierwszego konta (administratora)
+        sync: false
+      - key: SECRET_KEY          # sekret serwera; Render generuje losową wartość
+        generateValue: true
       - key: ANTHROPIC_API_KEY   # opcjonalnie: włącza dział AI; można zostawić puste
         sync: false
     # Szybsze pierwsze otwarcie: darmowa instancja po uśpieniu traci pobrane notowania i pobiera je od nowa.

@@ -855,7 +855,7 @@ def parse_accounts(files) -> list[XTBExport]:
             exp.files = [f[0] for f in group]
         exp.account = exp.account or acc or ("rachunek" if len(groups) == 1 else f"rachunek {len(out) + 1}")
         out.append(exp)
-    return out
+    return sorted(out, key=lambda e: str(e.account or ""))      # stała kolejność, niezależna od kolejności plików
 
 
 def merge_exports(exports: list[XTBExport], selected=None) -> XTBExport:

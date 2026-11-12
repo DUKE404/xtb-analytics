@@ -307,7 +307,15 @@ th[aria-sort="ascending"] .th-sort::after { border-bottom-color: var(--brass); b
 .pulse { display: inline-block; width: 8px; height: 8px; margin-right: 10px; border-radius: 50%; background: var(--brass); animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
-.login { padding-top: 18vh; display: grid; gap: 16px; }
+.login { padding-top: 10vh; }
+.login-form { display: grid; gap: 14px; max-width: 460px; }
+.login-field { display: grid; gap: 6px; font-size: 13.5px; color: var(--ink-2); }
+.login-form .link-btn { justify-self: start; padding-left: 0; }
+.account { margin-top: 8px; }
+.account .value.small { font-size: 14px; font-weight: 500; text-align: right; }
+.account .btn-row { margin-top: 14px; flex-wrap: wrap; }
+.invite { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 14px 0; padding: 12px 14px; border-radius: 10px; background: var(--raised); }
+.invite-code { font: 600 19px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em; color: var(--brass); user-select: all; }
 .login h2 { margin: 0; font: 600 26px/1.2 var(--serif); }
 .login p { margin: 0; color: var(--ink-2); font-family: var(--serif); }
 .skeleton > div { height: 14px; margin: 16px 0; border-radius: 4px; background: var(--panel); }

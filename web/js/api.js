@@ -1,8 +1,9 @@
 // Komunikacja z serwerem: logowanie, sesja analizy, ekrany. Sesja żyje w pamięci serwera,
-// więc gdy serwer ją zgubi (uśpienie darmowej instancji), odtwarzamy ją z plików zapisanych w telefonie.
+// więc gdy serwer ją zgubi (uśpienie darmowej instancji), odtwarzamy ją z plików z zaszyfrowanego sejfu konta.
 
 import { setCurrency } from "./format.js";
-import { files, prefs } from "./store.js";
+import { bindRemote, dropLegacyFiles, files, prefs, resetMemory, syncFromVault, takeLegacyFiles } from "./store.js";
+import { deriveKeys, fetchItems, keyring, open, randomHex, seal } from "./vault.js";
 
 export class ApiError extends Error {
   constructor(message, status, code) {
@@ -18,7 +19,13 @@ export const state = {
   mode: prefs.get("mode", "demo"),        // "demo" | "upload"
   session: null,                           // metadane sesji z serwera
   settings: prefs.get("settings", null),   // {rf, bench}
+  user: null,                              // {username, is_admin, ...} po zalogowaniu
 };
+
+function reloadPrefs() {
+  state.mode = prefs.get("mode", "demo");
+  state.settings = prefs.get("settings", null);
+}
 
 async function request(path, { method = "GET", body = null, json = null, timeout = 120000 } = {}) {
   const headers = {};
@@ -68,17 +75,135 @@ export async function newerBuild() {
   }
 }
 
-export async function login(password) {
-  const out = await request("/api/login", { method: "POST", json: { password } });
-  state.token = out.token || "";
-  prefs.set("token", state.token);
+// --------------------------------------------------------------------------- konto
+
+bindRemote(request);
+
+export function authStatus() {
+  return request("/api/auth/status", { timeout: 15000 });
 }
 
-export function logout() {
+/** Czy to urządzenie ma token i klucz szyfrowania (czyli można pominąć ekran logowania). */
+export async function restore() {
+  if (!state.token || !(await keyring.load())) return false;
+  try {
+    state.user = await request("/api/auth/me", { timeout: 20000 });
+  } catch (err) {
+    if (err.status === 401) { await dropLocal(); return false; }
+    throw err;
+  }
+  await syncFromVault();
+  reloadPrefs();
+  return true;
+}
+
+async function adoptLogin(out, username, encKey) {
+  prefs.wipeLocal();                       // ustawienia poprzedniego konta na tym urządzeniu - precz
+  resetMemory();
+  state.token = out.token;
+  state.session = null;
+  prefs.set("token", state.token);
+  await keyring.set(username, encKey);
+  state.user = await request("/api/auth/me");
+  await syncFromVault();
+  reloadPrefs();
+  return migrateLegacy();
+}
+
+/** Pliki z wersji sprzed kont (niezaszyfrowane w tym telefonie) trafiają do sejfu, jeśli sejf jest pusty. */
+async function migrateLegacy() {
+  const legacy = await takeLegacyFiles();
+  if (!legacy.length) return 0;
+  const current = await files.load();
+  if (!current.length) {
+    await files.save(legacy.map((f) => ({ name: f.name, type: f.type, data: f.data })));
+    prefs.set("mode", "upload");
+    state.mode = "upload";
+  }
+  dropLegacyFiles();
+  return current.length ? 0 : legacy.length;
+}
+
+export async function login(username, password) {
+  const name = String(username).trim().toLowerCase();
+  const p = await request(`/api/auth/params?u=${encodeURIComponent(name)}`);
+  const keys = await deriveKeys(password, p.salt, p.iterations);
+  const out = await request("/api/auth/login", { method: "POST", json: { username: name, auth_key: keys.authKey } });
+  return adoptLogin(out, name, keys.encKey);
+}
+
+/** Nowe konto: kod zaproszenia albo (dla pierwszego konta) kod konfiguracji. */
+export async function register(username, password, code) {
+  const name = String(username).trim().toLowerCase();
+  const status = await authStatus();
+  const salt = randomHex(16);
+  const keys = await deriveKeys(password, salt, status.kdf_iterations);
+  const out = await request("/api/auth/register", { method: "POST",
+    json: { username: name, auth_key: keys.authKey, salt, invite: String(code || "").trim() } });
+  return adoptLogin(out, name, keys.encKey);
+}
+
+async function dropLocal() {
   state.token = "";
   state.session = null;
-  prefs.remove("token");
+  state.user = null;
+  resetMemory();
+  prefs.wipeLocal();
+  await keyring.clear();
+  reloadPrefs();
 }
+
+export async function logout() {
+  await prefs.flush();
+  try { await request("/api/auth/logout", { method: "POST", json: {}, timeout: 10000 }); } catch { /* i tak czyścimy urządzenie */ }
+  await dropLocal();
+}
+
+export async function logoutOthers() {
+  return request("/api/auth/logout-others", { method: "POST", json: {} });
+}
+
+export async function me() {
+  state.user = await request("/api/auth/me");
+  return state.user;
+}
+
+/** Zmiana hasła: nowe klucze, więc cały sejf jest szyfrowany od nowa w telefonie i wysyłany w jednym żądaniu. */
+export async function changePassword(oldPassword, newPassword) {
+  await prefs.flush();
+  const name = keyring.username;
+  const p = await request(`/api/auth/params?u=${encodeURIComponent(name)}`);
+  const oldKeys = await deriveKeys(oldPassword, p.salt, p.iterations);
+  const salt = randomHex(16);
+  const newKeys = await deriveKeys(newPassword, salt, p.iterations);
+  const items = [];
+  for (const it of await fetchItems(request)) {
+    let opened;
+    try { opened = await open(oldKeys.encKey, it.key, it); } catch {
+      throw new ApiError("Obecne hasło jest nieprawidłowe.", 403, "bad_credentials");
+    }
+    items.push({ key: it.key, ...(await seal(newKeys.encKey, it.key, opened.meta, opened.data)) });
+  }
+  await request("/api/auth/password", { method: "POST", timeout: 180000,
+    json: { auth_key: oldKeys.authKey, new_auth_key: newKeys.authKey, new_salt: salt, items } });
+  await keyring.set(name, newKeys.encKey);
+  return me();
+}
+
+export async function deleteAccount(password) {
+  const name = keyring.username;
+  const p = await request(`/api/auth/params?u=${encodeURIComponent(name)}`);
+  const keys = await deriveKeys(password, p.salt, p.iterations);
+  await request("/api/auth/account", { method: "DELETE", json: { auth_key: keys.authKey } });
+  await dropLocal();
+}
+
+export const admin = {
+  list: () => request("/api/admin/invites"),
+  invite: (note) => request("/api/admin/invites", { method: "POST", json: { note } }),
+  revoke: (id) => request(`/api/admin/invites/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  removeUser: (id) => request(`/api/admin/users/${encodeURIComponent(id)}`, { method: "DELETE" }),
+};
 
 function overridesFor(mode) {
   return prefs.get(`overrides:${mode}`, []);
@@ -135,7 +260,7 @@ export async function setView(view) {
   return out;
 }
 
-/** Usuwa z telefonu pliki jednego rachunku i przelicza resztę. */
+/** Usuwa z sejfu pliki jednego rachunku i przelicza resztę. */
 export async function removeAccount(id) {
   const acc = (state.session?.accounts || []).find((a) => a.id === id);
   if (!acc) return state.session;
@@ -153,7 +278,7 @@ export async function setMode(mode) {
   return createSession();
 }
 
-/** Dopisuje wybrane pliki do zapisanych w telefonie (ten sam plik zastępuje starszy) i tworzy z nich sesję.
+/** Dopisuje wybrane pliki do zapisanych w sejfie (ten sam plik zastępuje starszy) i tworzy z nich sesję.
  *  Dzięki temu drugi rachunek (np. USD obok PLN) można dograć osobno. Przy błędzie przywraca poprzedni stan. */
 export async function uploadFiles(fileList) {
   const list = [];
@@ -178,9 +303,11 @@ export async function saveMapping(rows) {
   return adopt(await request(`/api/session/${state.session.sid}/mapping`, { method: "PUT", json: { mapping: rows }, timeout: 180000 }));
 }
 
+/** Usuwa wgrane eksporty i ustawienia z sejfu konta (konto zostaje). */
 export async function forgetDevice() {
   await files.clear();
   ["mode", "overrides:demo", "overrides:upload", "settings", "base", "accounts:off", "view"].forEach((k) => prefs.remove(k));
+  await prefs.flush();
   state.mode = "demo";
   state.settings = null;
   return createSession();

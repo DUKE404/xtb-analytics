@@ -36,16 +36,42 @@ obejrzeć wszystko, zanim wgrasz własny plik.
 Aplikacja składa się z małego serwera w Pythonie (liczy) i strony, którą otwierasz w telefonie (pokazuje).
 Najprościej postawić serwer na darmowym planie [Render](https://render.com).
 
+Konta i zaszyfrowane portfele trzyma darmowa baza **Neon** (Postgres). Darmowy Render nie ma trwałego dysku,
+a jego darmowa baza wygasa po 30 dniach, więc baza jest osobno.
+
+**A. Baza Neon (raz, ok. 3 minuty)**
+
+1. Wejdź na **neon.com**, załóż darmowe konto (bez karty) i utwórz projekt - region najlepiej
+   **Europe (Frankfurt)**, blisko serwera Render.
+2. W panelu projektu kliknij **Connect** i skopiuj **connection string** (zaczyna się od `postgresql://`
+   i kończy `?sslmode=require`). To adres razem z hasłem do bazy - nie wklejaj go nigdzie poza Render.
+
+**B. Serwer Render**
+
 1. Załóż konto na **render.com** - najwygodniej przyciskiem „Sign in with GitHub”.
 2. W panelu wybierz **New → Blueprint** i wskaż repozytorium `xtb-analytics`. Jeśli Render go nie widzi, kliknij
    „Configure account” i daj mu dostęp do tego repozytorium.
-3. Render odczyta plik `render.yaml` i zapyta o dwie wartości:
-   - `APP_PASSWORD` - **wymyśl hasło do aplikacji**. Adres będzie publiczny, a hasło pilnuje, żeby nikt poza Tobą
-     z niej nie korzystał.
+3. Render odczyta plik `render.yaml` i zapyta o wartości:
+   - `DATABASE_URL` - wklej connection string z Neon.
+   - `APP_PASSWORD` - **kod konfiguracji**: wymyśl długi ciąg znaków. Będzie potrzebny tylko raz, do założenia
+     pierwszego konta (administratora). Dopóki konto nie istnieje, kod pilnuje, żeby nikt obcy go nie przejął.
    - `ANTHROPIC_API_KEY` - zostaw puste, chyba że chcesz włączyć dział AI (patrz niżej).
+   - `SECRET_KEY` Render wygeneruje sam.
 4. Kliknij **Apply**. Pierwsze budowanie trwa kilka minut. Na końcu dostaniesz adres w rodzaju
    `https://xtb-analytics-abcd.onrender.com`.
-5. Otwórz ten adres w telefonie, wpisz hasło i dodaj aplikację do ekranu głównego (następny rozdział).
+5. Otwórz ten adres i **od razu** załóż pierwsze konto: nazwa użytkownika, hasło (co najmniej 10 znaków, najlepiej
+   kilka słów) i kod konfiguracji z punktu 3. Potem dodaj aplikację do ekranu głównego (następny rozdział).
+
+Masz już działającą usługę z poprzedniej wersji? W Render otwórz usługę → **Environment** → dodaj `DATABASE_URL`
+(z Neon) i `SECRET_KEY` (dowolny długi losowy ciąg) → **Save**. Obecne `APP_PASSWORD` stanie się kodem
+konfiguracji. Po zalogowaniu pliki zapisane wcześniej w telefonie same przeniosą się do zaszyfrowanego sejfu.
+
+**C. Konta dla innych osób**
+
+W **Więcej → Dane i ustawienia → Ustawienia** administrator generuje **kod zaproszenia** (jednorazowy, ważny
+7 dni) i przekazuje go osobie, która na ekranie logowania wybiera „Mam kod zaproszenia - załóż konto”.
+Każde konto ma własny, osobno zaszyfrowany portfel; nikt - także administrator - nie widzi cudzych plików.
+Administrator może usunąć cudze konto razem z jego sejfem.
 
 Co warto wiedzieć o darmowym planie (stan na listopad 2026): usługa zasypia po 15 minutach bez ruchu i budzi się
 przy następnym wejściu, co trwa do około minuty. Aplikacja otworzy się od razu z pamięci telefonu i pokaże
@@ -75,7 +101,7 @@ w telefonie podłączonym do tego samego Wi-Fi. W tym wariancie dane nie opuszcz
 być włączony, a instalacja ikony z trybem offline nie zadziała (przeglądarki wymagają do tego szyfrowanego adresu
 `https://`).
 
-Hasło lokalnie jest opcjonalne. Żeby je ustawić albo włączyć AI, skopiuj `.env.example` jako `.env` i uzupełnij.
+Lokalnie konta trzymane są w pliku `.cache/accounts.sqlite` (bez `DATABASE_URL`). Przy pierwszym uruchomieniu załóż konto; jeśli ustawisz `APP_PASSWORD`, posłuży jako kod konfiguracji. Konfiguracja: skopiuj `.env.example` jako `.env` i uzupełnij.
 
 ---
 
@@ -255,13 +281,39 @@ raport w stylu risk managera) i czat odpowiadający na pytania o portfel.
 
 ## Prywatność i bezpieczeństwo
 
-- Eksport z XTB jest zapisany **w telefonie**. Na serwer trafia tylko na czas obliczeń i żyje tam wyłącznie
-  w pamięci - nie jest zapisywany na dysk ani do bazy.
-- Serwer pobiera notowania (Yahoo Finance, Stooq), kursy NBP i czynniki z biblioteki K. Frencha. Wysyła przy tym
-  tylko symbole instrumentów.
-- W chmurze **zawsze ustaw `APP_PASSWORD`**. To jedno wspólne hasło, nie system kont - nie udostępniaj adresu
-  z hasłem osobom, którym nie pokazałbyś swojego portfela.
-- „Usuń moje dane z tego telefonu” w Ustawieniach kasuje zapisany eksport i poprawki tickerów.
+**Hasło nie opuszcza telefonu.** Telefon wyprowadza z niego dwa klucze (PBKDF2-SHA256, 600 000 iteracji, potem
+HKDF): klucz logowania, który trafia na serwer, i klucz szyfrowania, który zostaje w telefonie. Z pierwszego
+nie da się odtworzyć drugiego.
+
+**Portfel jest szyfrowany w telefonie** (AES-256-GCM), zanim trafi do bazy: pliki z xStation, ich nazwy (z numerem
+rachunku), poprawki tickerów i ustawienia. W bazie Neon leżą tylko szyfrogramy. Ani Neon, ani Render, ani ktoś,
+kto wykradnie bazę, nie odczyta portfela.
+
+**Uczciwie o granicach:**
+- Do obliczeń telefon wysyła odszyfrowane pliki na serwer na czas sesji (do 3 godzin). Serwer trzyma je wtedy
+  wyłącznie w pamięci - nie zapisuje na dysk ani do bazy - i kasuje przy wylogowaniu. Kto przejąłby serwer
+  w trakcie sesji, mógłby je zobaczyć. Pełne szyfrowanie „end-to-end” wymagałoby liczenia w telefonie.
+- **Zapomniane hasło oznacza utratę sejfu** - nie ma resetu, bo nikt nie zna klucza. Konto zakładasz od nowa
+  i wgrywasz eksporty ponownie (xStation zawsze je wygeneruje).
+- Klucz szyfrowania jest zapamiętany w przeglądarce telefonu (jako klucz, którego nie da się odczytać, tylko
+  używać), żeby nie wpisywać hasła przy każdym otwarciu. **Wyloguj** usuwa go z urządzenia - zrób to na cudzym
+  lub wspólnym komputerze.
+
+**Logowanie:** sesja wygasa po 30 dniach bez użycia; w bazie są tylko skróty tokenów. Po 5 nieudanych próbach
+konto jest blokowane na 1 minutę, potem coraz dłużej (do 1 godziny); jest też limit prób z jednego adresu.
+„Wyloguj inne urządzenia” i zmiana hasła kończą sesje na pozostałych urządzeniach.
+
+**Serwer:** połączenie tylko przez HTTPS (Render), nagłówki CSP, HSTS, X-Frame-Options; aplikacja ładuje
+wyłącznie własne skrypty. Sesja analizy należy do konta - inne konto jej nie zobaczy nawet ze znanym
+identyfikatorem. Zapytania do bazy są parametryzowane.
+
+**Dostawcy:** Render (serwer, Frankfurt) i Neon (baza) przechowują tylko to, co opisane wyżej. Serwer pobiera
+notowania (Yahoo Finance, Stooq), kursy NBP i czynniki z biblioteki K. Frencha, wysyłając tylko symbole
+instrumentów. Dział AI (opcjonalny) wysyła do Anthropic wyłącznie metryki zbiorcze.
+
+**Co możesz zrobić sam:** użyj długiego, unikalnego hasła (np. czterech przypadkowych słów), nie udostępniaj
+kodu konfiguracji, zmień `APP_PASSWORD` w Render po założeniu kont, włącz weryfikację dwuetapową na kontach
+GitHub, Render i Neon - to one dają dostęp do serwera i bazy.
 
 ---
 
@@ -286,6 +338,10 @@ tests/    pytest: silnik, API, interfejs w przeglądarce (Playwright)
 - Wszystkie przyjęte założenia są w [ASSUMPTIONS.md](ASSUMPTIONS.md).
 
 ## Znane ograniczenia
+
+- **Konta**: brak weryfikacji dwuetapowej i resetu hasła (to drugie celowo - patrz Prywatność). Darmowy Neon
+  usypia bazę po kilku minutach bezczynności; pierwsze logowanie po przerwie trwa wtedy sekundę-dwie dłużej.
+  Limit sejfu: 80 MB i 60 plików na konto, darmowy Neon mieści 1 GB na projekt.
 
 **Czego nie dało się sprawdzić podczas budowy**
 
