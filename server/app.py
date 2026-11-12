@@ -29,7 +29,7 @@ from werkzeug.exceptions import HTTPException
 from data.xtb_parser import XTBFormatError
 from server import blocks as B
 from server.accounts import Accounts, AuthError
-from server.db import Database
+from server.db import Database, clean_url, describe_problem, env
 from server.blocks import jsonable
 from data.loader import BASE_CHOICES, SINCE_PRESETS
 from server.context import BENCH_CHOICES, DEFAULT_BENCH, DEFAULT_RF, build_context
@@ -82,7 +82,17 @@ def create_app(store: SessionStore | None = None, provider_factory=None, account
     app.json.ensure_ascii = False
     sessions = store or SessionStore()
     app.extensions["sessions"] = sessions
-    users = accounts or Accounts(Database())
+    db_error = None
+    if accounts is None:
+        try:
+            raw = clean_url(env("DATABASE_URL"))
+            if raw and not raw.startswith(("postgres://", "postgresql://", "sqlite:///")):
+                raise ValueError("zły format adresu")       # literówka w Render nie może po cichu włączyć tymczasowej bazy
+            accounts = Accounts(Database())
+        except Exception as exc:                      # aplikacja wstaje i mówi, co jest nie tak, zamiast paść przy starcie
+            db_error = describe_problem(env("DATABASE_URL"), exc)
+            app.logger.error("Baza kont niedostępna: %s", db_error)
+    users = accounts
     app.extensions["accounts"] = users
 
     def client_ip() -> str:
@@ -161,6 +171,8 @@ def create_app(store: SessionStore | None = None, provider_factory=None, account
     @app.before_request
     def _auth():
         g.user = None
+        if users is None and request.path.startswith("/api/") and request.path != "/api/health":
+            return ok({"error": db_error, "code": "db_unavailable"}, 503)
         if not request.path.startswith("/api/") or request.path in PUBLIC_API:
             return None
         header = request.headers.get("Authorization", "")
@@ -190,6 +202,10 @@ def create_app(store: SessionStore | None = None, provider_factory=None, account
     @app.get("/api/health")
     def health():
         return ok({"ok": True, "version": VERSION, "build": build, "auth_required": True, "ai_enabled": ai_enabled(),
+                   "database": {"ok": users is not None, "error": db_error,
+                                "storage": users.db.label if users is not None else None,
+                                "persistent": users.db.persistent if users is not None else False,
+                                "setup_code_set": bool(users.setup_code) if users is not None else False},
                    "nav": nav_config(ai_enabled()),
                    "settings": {"rf": DEFAULT_RF, "bench": DEFAULT_BENCH, "bench_choices": [
                        {"value": k, "label": _bench_label(k)} for k in BENCH_CHOICES]}})

@@ -60,11 +60,52 @@ def _is_postgres(url: str) -> bool:
     return url.startswith(("postgres://", "postgresql://"))
 
 
+def env(name: str) -> str:
+    """Zmienna środowiskowa odporna na drobne różnice w nazwie wpisanej w panelu Render:
+    APP_PASSWORD = app_password = app.password = App-Password. Dokładna nazwa ma pierwszeństwo."""
+    if os.environ.get(name, "").strip():
+        return os.environ[name].strip()
+    want = name.upper()
+    for key, value in os.environ.items():
+        if key.strip().upper().replace(".", "_").replace("-", "_").replace(" ", "_") == want and value.strip():
+            return value.strip()
+    return ""
+
+
+def clean_url(raw: str) -> str:
+    """Adres bazy wklejony z panelu Neon bywa w formie polecenia: psql 'postgresql://...'. Zostaje sam adres."""
+    url = (raw or "").strip()
+    if url.lower().startswith("psql "):
+        url = url[5:].strip()
+    if len(url) > 1 and url[0] == url[-1] and url[0] in "'\"":
+        url = url[1:-1].strip()
+    return url
+
+
+def describe_problem(raw: str, exc: Exception | None = None) -> str:
+    """Opis błędu bazy po polsku, bez hasła z adresu."""
+    url = clean_url(raw)
+    if url and not _is_postgres(url):
+        return ("DATABASE_URL w Render nie wygląda na adres bazy: powinien zaczynać się od postgresql:// "
+                "(skopiuj z Neon: Connect → Connection string).")
+    host = url.split("@")[-1].split("/")[0] if "@" in url else "?"
+    text = str(exc or "")
+    if "password authentication failed" in text:
+        why = "Neon odrzucił hasło z adresu - skopiuj connection string jeszcze raz (w całości)."
+    elif "could not translate host name" in text or "Name or service not known" in text:
+        why = "nie znam takiego serwera - adres jest ucięty albo z literówką."
+    elif "SSL" in text or "sslmode" in text:
+        why = "problem z szyfrowanym połączeniem - adres powinien kończyć się na ?sslmode=require."
+    else:
+        why = text.split("\n")[0][:200] or "nieznany błąd"
+    return f"Nie mogę połączyć się z bazą ({host}): {why}"
+
+
 class Database:
     """Cienka warstwa nad sqlite3 / psycopg: execute, all, one, transakcja."""
 
     def __init__(self, url: str | None = None):
-        url = (url if url is not None else os.environ.get("DATABASE_URL", "")).strip()
+        url = clean_url(url if url is not None else env("DATABASE_URL"))
         self.url = url
         self.kind = "postgres" if _is_postgres(url) else "sqlite"
         self._lock = threading.RLock()

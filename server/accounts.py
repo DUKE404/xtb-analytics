@@ -25,7 +25,7 @@ import secrets
 import threading
 import time
 
-from server.db import Database
+from server.db import Database, env
 
 TOKEN_TTL = 30 * 86400              # sesja wygasa po 30 dniach bez użycia
 TOKEN_REFRESH = 3600                # last_seen / expires odświeżane najwyżej raz na godzinę
@@ -85,7 +85,7 @@ class Accounts:
     def __init__(self, db: Database, secret: str | None = None, setup_code: str | None = None):
         self.db = db
         # sekret serwera: do udawanych soli nieistniejących kont (żeby nie dało się sprawdzić, kto ma konto)
-        self.secret = (secret if secret is not None else os.environ.get("SECRET_KEY", "")) or secrets.token_hex(32)
+        self.secret = (secret if secret is not None else env("SECRET_KEY")) or secrets.token_hex(32)
         self._setup_code = setup_code
         self.iterations = KDF_ITERATIONS
         self._ip_fail: dict[str, list[float]] = {}
@@ -93,7 +93,7 @@ class Accounts:
 
     @property
     def setup_code(self) -> str:
-        return (self._setup_code if self._setup_code is not None else os.environ.get("APP_PASSWORD", "")).strip()
+        return (self._setup_code if self._setup_code is not None else env("APP_PASSWORD")).strip()
 
     # ------------------------------------------------------------------ stan
     def has_users(self) -> bool:

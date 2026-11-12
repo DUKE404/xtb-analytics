@@ -298,3 +298,40 @@ def test_authed_helper_client_works():
     c = authed_client()
     assert strict_json(c.get("/api/auth/me"))["username"] == "tester"
     assert TEST_KEY and TEST_SALT
+
+
+# --------------------------------------------------------------------------- konfiguracja w Render: literówki i błędy
+
+def test_env_names_tolerate_case_and_dots(monkeypatch):
+    from server.db import env
+    monkeypatch.delenv("APP_PASSWORD", raising=False)
+    monkeypatch.setenv("app.password", "kod-z-kropka")
+    assert env("APP_PASSWORD") == "kod-z-kropka"
+    assert Accounts(Database(":memory:"), secret="s").setup_code == "kod-z-kropka"
+    monkeypatch.setenv("APP_PASSWORD", "dokladna-nazwa")
+    assert env("APP_PASSWORD") == "dokladna-nazwa"
+
+
+def test_database_url_pasted_as_psql_command():
+    from server.db import clean_url
+    url = "postgresql://u:p@ep-x.eu-central-1.aws.neon.tech/neondb?sslmode=require"
+    assert clean_url(f"psql '{url}'") == url and clean_url(f'  "{url}" ') == url and clean_url(url) == url
+
+
+def test_app_starts_and_explains_broken_database(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:tajne@127.0.0.1:1/neondb?sslmode=disable&connect_timeout=2")
+    c = create_app(SessionStore(), provider_factory=synthetic_provider).test_client()
+    h = c.get("/api/health").get_json()
+    assert h["database"]["ok"] is False and "Nie mogę połączyć się z bazą" in h["database"]["error"]
+    assert "tajne" not in h["database"]["error"]                                   # bez hasła z adresu
+    r = c.get("/api/auth/status")
+    assert r.status_code == 503 and r.get_json()["code"] == "db_unavailable"
+    monkeypatch.setenv("DATABASE_URL", "neondb-zly-adres")
+    h = create_app(SessionStore(), provider_factory=synthetic_provider).test_client().get("/api/health").get_json()
+    assert h["database"]["ok"] is False and "postgresql://" in h["database"]["error"]   # literówka = jasny błąd
+
+
+def test_health_reports_database_state():
+    c, _ = _app()
+    d = c.get("/api/health").get_json()["database"]
+    assert d == {"ok": True, "error": None, "storage": "SQLite (pamięć)", "persistent": False, "setup_code_set": True}
