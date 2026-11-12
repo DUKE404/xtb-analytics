@@ -247,25 +247,35 @@ function bootMessage(text, sub = "") {
 
 async function start() {
   bootMessage("Przeliczam portfel…", "Odtwarzam historię dzień po dniu i liczę ryzyko.");
-  try {
-    await api.createSession();
-  } catch (err) {
-    if (err.status === 401) return showLogin();
-    if (api.state.mode === "upload") {
-      // zapisany plik nie daje się już wczytać (albo brak notowań) - pokaż dane przykładowe i powiedz dlaczego
-      try { await api.setMode("demo"); } catch { /* obsłużone niżej */ }
-      if (api.state.session) {
-        route();
-        main.prepend(errorNote(new Error(`Nie udało się wczytać zapisanego eksportu: ${err.message}\nPokazuję dane przykładowe. Wgraj plik ponownie w „Więcej → Dane i ustawienia”.`)));
-        return;
-      }
+  let err = null;
+  // zerwane połączenie (np. telefon uśpił kartę podczas budzenia serwera) - spróbuj jeszcze dwa razy
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await api.createSession();
+      err = null;
+      break;
+    } catch (e) {
+      err = e;
+      if (e.status === 401) return showLogin();
+      if (!api.isTransient(e)) break;
+      bootMessage("Ponawiam połączenie…", "Serwer albo sieć chwilowo nie odpowiada.");
+      try { await api.waitForServer(() => {}); } catch { break; }
     }
-    const retry = el("button", { class: "btn quiet", type: "button" }, "Spróbuj ponownie");
-    retry.addEventListener("click", start);
-    show(el("div", { class: "screen" }, errorNote(err), retry));
-    return;
   }
-  route();
+  if (!err) return route();
+  const retry = el("button", { class: "btn quiet", type: "button" }, "Spróbuj ponownie");
+  retry.addEventListener("click", start);
+  if (api.state.mode === "upload" && !api.isTransient(err)) {
+    // zapisanego eksportu nie da się przeliczyć - pokaż na razie dane przykładowe, ale nie zmieniaj zapisanego
+    // trybu: pliki zostają w sejfie i przy następnym starcie aplikacja znów spróbuje je wczytać
+    try { await api.previewDemo(); } catch { /* obsłużone niżej */ }
+    if (api.state.session) {
+      route();
+      main.prepend(el("div", {}, errorNote(new Error(`Nie udało się przeliczyć Twojego portfela: ${err.message}\nNa razie pokazuję dane przykładowe. Twoje pliki są dalej w sejfie.`)), retry));
+      return;
+    }
+  }
+  show(el("div", { class: "screen" }, errorNote(err), retry));
 }
 
 async function boot() {

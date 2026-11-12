@@ -6,7 +6,7 @@ import { PREFS_KEY, deleteItem, fetchItems, keyring, newFileKey, open, putItem }
 
 const PREFIX = "xtba:";
 // ustawienia zapisywane w sejfie konta (reszta, np. token, dotyczy tylko tego urządzenia)
-const SYNCED = ["mode", "overrides:demo", "overrides:upload", "settings", "base", "accounts:off", "view"];
+const SYNCED = ["mode", "demo:chosen", "overrides:demo", "overrides:upload", "settings", "base", "accounts:off", "view"];
 
 let remote = null;          // funkcja request(path, opts) z api.js
 let pushTimer = null;
@@ -105,6 +105,11 @@ export async function syncFromVault() {
   loaded = true;
   if (!gotPrefs && SYNCED.some((k) => rawGet(k, undefined) !== undefined)) schedulePush();
   return { files: memory.length, prefs: gotPrefs };
+}
+
+/** Czy w sejfie są pliki eksportu (po syncFromVault). */
+export function filesStored() {
+  return memory.length > 0;
 }
 
 export function resetMemory() {

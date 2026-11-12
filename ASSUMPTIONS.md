@@ -359,3 +359,12 @@ kluczem z hasła użytkownika.
 - **Limit prób z adresu IP** opiera się na X-Forwarded-For; jest drugą linią obrony - pierwszą jest blokada konta.
 - **Granica**: odszyfrowane pliki trafiają na serwer na czas sesji analizy (w pamięci, max 3 h, kasowane przy
   wylogowaniu). Liczenie wszystkiego w telefonie wymagałoby przepisania silnika - poza zakresem.
+
+### Tryb danych po błędzie wczytania
+- Chwilowy błąd przy starcie (zerwane połączenie, przekroczony czas, 502/503/504 – np. gdy telefon uśpi kartę
+  podczas budzenia serwera) jest ponawiany do 3 razy; aplikacja nie przechodzi wtedy na dane przykładowe.
+- Gdy zapisanego eksportu nie da się przeliczyć (błąd trwały), dane przykładowe pokazywane są tylko na teraz –
+  zapisany tryb i pliki w sejfie zostają, przy następnym starcie aplikacja znów próbuje je wczytać.
+- Dane przykładowe przy plikach w sejfie są pamiętane tylko po świadomym wyborze („Wróć do danych przykładowych”,
+  znacznik `demo:chosen`). Zapisany tryb demo bez tego znacznika (pozostałość po błędzie starszej wersji) jest
+  traktowany jak tryb z plikami.

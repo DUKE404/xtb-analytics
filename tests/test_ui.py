@@ -773,3 +773,64 @@ def test_invite_registration_and_password_change(browser, base_url, accounts):
     wait_ready(pg3)
     ctx3.close()
     accounts.delete_user(bart["id"])
+
+
+def test_dropped_connection_on_wake_does_not_switch_portfolio_to_demo(browser, base_url, accounts, tmp_path):
+    """Telefon uśpił kartę podczas budzenia serwera i pierwsze przeliczenie portfela zerwało się:
+    aplikacja ponawia próbę i pokazuje własny portfel, a w sejfie nie zapisuje trybu demo."""
+    clean_vault(accounts)
+    ctx, pg = new_page(browser, base_url)
+    ui_login(pg)
+    wait_ready(pg)
+    _upload_usd(pg, tmp_path)
+    pg.wait_for_timeout(1500)
+    # następne uruchomienie: pierwsze POST /api/session zrywa się po stronie sieci
+    dropped = {"n": 0}
+
+    def flaky(route):
+        if route.request.method == "POST" and dropped["n"] == 0:
+            dropped["n"] += 1
+            return route.abort("connectionreset")
+        return route.continue_()
+
+    pg.route("**/api/session", flaky)
+    pg.reload()
+    wait_ready(pg)
+    assert dropped["n"] == 1
+    assert "dane przykładowe" not in pg.inner_text("#bar-meta")
+    assert pg.evaluate("JSON.parse(localStorage.getItem('xtba:mode'))") == "upload"
+    pg.unroute("**/api/session")
+    ctx.close()
+
+
+def test_portfolio_stuck_on_demo_by_earlier_failure_comes_back(browser, base_url, accounts, tmp_path):
+    """Stan po błędzie starszej wersji: pliki w sejfie, a zapisany tryb to demo (choć nikt go nie wybrał).
+    Po starcie aplikacja wraca do plików; świadomy wybór danych przykładowych jest za to pamiętany."""
+    clean_vault(accounts)
+    ctx, pg = new_page(browser, base_url)
+    ui_login(pg)
+    wait_ready(pg)
+    _upload_usd(pg, tmp_path)
+    pg.wait_for_timeout(1500)
+    # zapisz w sejfie tryb demo bez znacznika wyboru (tak jak robiła to poprzednia wersja po błędzie)
+    pg.evaluate("""async () => {
+        const store = await import('/js/store.js');
+        store.prefs.set('mode', 'demo');
+        store.prefs.remove('demo:chosen');
+        await store.prefs.flush();
+    }""")
+    ctx.close()
+    ctx2, pg2 = new_page(browser, base_url)
+    ui_login(pg2)
+    wait_ready(pg2)
+    assert "dane przykładowe" not in pg2.inner_text("#bar-meta")
+    # świadomy wybór danych przykładowych zostaje także po ponownym otwarciu
+    pg2.goto(base_url + "/#/import/import")
+    pg2.locator(".btn", has_text="Wróć do danych przykładowych").click()
+    pg2.wait_for_function("document.querySelector('#bar-meta')?.textContent.includes('dane przykładowe')", timeout=90000)
+    pg2.wait_for_timeout(1500)
+    pg2.reload()
+    wait_ready(pg2)
+    assert "dane przykładowe" in pg2.inner_text("#bar-meta")
+    assert not pg2.errors, pg2.errors
+    ctx2.close()

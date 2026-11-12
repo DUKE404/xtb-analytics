@@ -2,7 +2,7 @@
 // więc gdy serwer ją zgubi (uśpienie darmowej instancji), odtwarzamy ją z plików z zaszyfrowanego sejfu konta.
 
 import { setCurrency } from "./format.js";
-import { bindRemote, dropLegacyFiles, files, prefs, resetMemory, syncFromVault, takeLegacyFiles } from "./store.js";
+import { bindRemote, dropLegacyFiles, files, filesStored, prefs, resetMemory, syncFromVault, takeLegacyFiles } from "./store.js";
 import { deriveKeys, fetchItems, keyring, open, randomHex, seal } from "./vault.js";
 
 export class ApiError extends Error {
@@ -23,8 +23,16 @@ export const state = {
 };
 
 function reloadPrefs() {
-  state.mode = prefs.get("mode", "demo");
+  state.mode = savedMode();
   state.settings = prefs.get("settings", null);
+}
+
+/** Zapisany tryb. Dane przykładowe zamiast plików z sejfu tylko wtedy, gdy użytkownik sam je wybrał -
+ *  chwilowy błąd (np. zerwane połączenie przy budzeniu serwera) nie może na stałe przełączyć portfela na demo. */
+function savedMode() {
+  const mode = prefs.get("mode", "demo");
+  if (mode === "demo" && !prefs.get("demo:chosen", false) && filesStored()) return "upload";
+  return mode;
 }
 
 async function request(path, { method = "GET", body = null, json = null, timeout = 120000 } = {}) {
@@ -224,10 +232,11 @@ async function pruneFiles(session) {
   if (keep.length && keep.length < stored.length) await files.save(keep);
 }
 
-/** Tworzy sesję dla bieżącego trybu. W trybie "upload" bez plików w telefonie wraca do demo. */
-export async function createSession() {
+/** Tworzy sesję dla bieżącego trybu. W trybie "upload" bez plików w telefonie wraca do demo.
+ *  persist=false: tymczasowy podgląd (np. demo po błędzie wczytania) bez zmiany zapisanego trybu. */
+export async function createSession({ mode: forced = null, persist = true } = {}) {
   const form = new FormData();
-  let mode = state.mode;
+  let mode = forced || state.mode;
   if (mode === "upload") {
     const stored = await files.load();
     if (!stored.length) mode = "demo";
@@ -244,8 +253,9 @@ export async function createSession() {
   const off = mode === "upload" ? prefs.get("accounts:off", []) : [];
   if (off.length) form.append("exclude", JSON.stringify(off));
   adopt(await request("/api/session", { method: "POST", body: form, timeout: 180000 }));
+  if (!persist) return state.session;
   state.mode = mode;
-  prefs.set("mode", mode);
+  if (prefs.get("mode", "demo") !== mode) prefs.set("mode", mode);
   await pruneFiles(state.session);
   return state.session;
 }
@@ -272,10 +282,22 @@ export async function removeAccount(id) {
   return createSession();
 }
 
+/** Wybór trybu przez użytkownika (zapisywany w sejfie). */
 export async function setMode(mode) {
   state.mode = mode;
   prefs.set("mode", mode);
+  prefs.set("demo:chosen", mode === "demo");
   return createSession();
+}
+
+/** Dane przykładowe tylko na teraz: zapisany tryb (pliki z sejfu) zostaje i przy następnym starcie wraca. */
+export function previewDemo() {
+  return createSession({ mode: "demo", persist: false });
+}
+
+/** Błąd, który zwykle mija sam: brak połączenia, przekroczony czas, serwer w trakcie startu. */
+export function isTransient(err) {
+  return err && (err.status === 0 || err.status === 502 || err.status === 503 || err.status === 504);
 }
 
 /** Dopisuje wybrane pliki do zapisanych w sejfie (ten sam plik zastępuje starszy) i tworzy z nich sesję.
@@ -289,6 +311,7 @@ export async function uploadFiles(fileList) {
   const kept = prevMode === "upload" ? previous.filter((f) => !names.has(f.name)) : [];
   await files.save([...kept, ...list]);
   state.mode = "upload";
+  prefs.set("demo:chosen", false);
   try {
     return await createSession();
   } catch (err) {
@@ -306,7 +329,7 @@ export async function saveMapping(rows) {
 /** Usuwa wgrane eksporty i ustawienia z sejfu konta (konto zostaje). */
 export async function forgetDevice() {
   await files.clear();
-  ["mode", "overrides:demo", "overrides:upload", "settings", "base", "accounts:off", "view"].forEach((k) => prefs.remove(k));
+  ["mode", "demo:chosen", "overrides:demo", "overrides:upload", "settings", "base", "accounts:off", "view"].forEach((k) => prefs.remove(k));
   await prefs.flush();
   state.mode = "demo";
   state.settings = null;
