@@ -88,6 +88,9 @@ def check_blocks(blocks, counts):
                     assert c["options"] and any(o["value"] == c["value"] for o in c["options"])
         elif kind == "statement":
             assert len(b["text"]) > 20
+        elif kind == "feed":
+            for it in b["items"]:
+                assert it["title"] and (it["url"] is None or it["url"].startswith(("https://", "http://")))
         elif kind in ("note", "bullets", "download"):
             assert b.get("text") or b.get("items") or b.get("path")
         else:

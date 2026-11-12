@@ -54,7 +54,7 @@ function table(b) {
   const head = el("tr", {}, b.columns.map((c) => el("th", { class: numeric(c) ? null : "t", scope: "col" }, c.label)));
   const body = el("tbody");
   const draw = (rows) => body.replaceChildren(...rows.map((r) => el("tr", {}, b.columns.map((c, i) =>
-    el("td", { class: (!numeric(c) && i > 0 ? "t" : "") + tone(r[c.key], c.fmt, false) || null }, fmt(r[c.key], c.fmt, c.digits))))));
+    el("td", { class: (!numeric(c) && i > 0 ? "t" : "") + tone(r[c.key], c.fmt, c.signed) || null }, fmt(r[c.key], c.fmt, c.digits, c.signed))))));
   const limit = b.limit || 12;
   draw(b.rows.slice(0, limit));
   const wrap = el("div", { class: "table-wrap" }, el("table", { class: "data" }, el("thead", {}, head), body));
@@ -70,6 +70,32 @@ function table(b) {
 
 function note(b) {
   return el("p", { class: "note" + (b.tone && b.tone !== "info" ? " " + b.tone : "") }, b.text);
+}
+
+/** Kiedy: "dziś 08:15", "wczoraj 22:10" albo "09.11, 14:30" - w czasie telefonu. */
+function when(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const hm = d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(new Date()) - day(d)) / 86400000);
+  if (diff === 0) return `dziś ${hm}`;
+  if (diff === 1) return `wczoraj ${hm}`;
+  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}, ${hm}`;
+}
+
+/** Nagłówki wiadomości. Tytuł jest odnośnikiem do wydawcy (nowa karta); treść wstawiana wyłącznie jako tekst. */
+function feed(b) {
+  const items = b.items.map((it) => {
+    const safe = typeof it.url === "string" && /^https?:\/\//i.test(it.url);
+    const head = safe ? el("a", { class: "feed-title", href: it.url, target: "_blank", rel: "noopener noreferrer" }, it.title)
+      : el("span", { class: "feed-title" }, it.title);
+    const meta = [it.source, it.time ? when(it.time) : null].filter(Boolean).join(" · ");
+    return el("li", {}, it.tag ? el("span", { class: "feed-tag" }, it.tag) : null, head, meta ? el("small", {}, meta) : null);
+  });
+  const out = el("section", {}, title(b.title), items.length ? el("ul", { class: "feed" }, items) : el("p", { class: "caption" }, "Brak wiadomości."));
+  if (b.caption) out.append(el("p", { class: "caption" }, b.caption));
+  return out;
 }
 
 function bullets(b) {
@@ -158,7 +184,7 @@ function controls(b, ctx) {
   return box;
 }
 
-const KINDS = { statement, metrics, chart, table, note, bullets, section, download, controls };
+const KINDS = { statement, metrics, chart, table, note, bullets, feed, section, download, controls };
 
 export function renderBlock(b, ctx) {
   const fn = KINDS[b.kind];

@@ -387,7 +387,13 @@ def test_desktop_layout_has_sidebar_and_tiles(desktop):
     shot(page, "d1-overview", full=False)
     page.locator("#tabs button", has_text="Spółki").click()
     wait_ready(page)
-    assert page.inner_text("#bar-title") == "Spółki" and "rocznie przez 10 lat" in page.inner_text(".statement")
+    assert page.inner_text("#bar-title") == "Spółki" and "Na ostatniej sesji" in page.inner_text(".statement")
+    assert page.locator("table.data tbody tr").count() >= 10 and page.locator(".feed li").count() >= 5
+    assert page.locator("td.pos").count() >= 1 and page.locator("td.neg").count() >= 1      # zmiany na zielono i czerwono
+    shot(page, "d5-companies-list")
+    page.locator("#subnav button", has_text="Wycena").click()
+    wait_ready(page)
+    assert "rocznie przez 10 lat" in page.inner_text(".statement")
     assert page.locator("figure.chart").count() >= 3 and "nie rekomendacja" in page.inner_text("main")
     shot(page, "d2-companies")
     assert not page.errors, page.errors
@@ -461,3 +467,26 @@ def test_stale_screen_link_falls_back_to_overview(page, base_url):
     wait_ready(page)
     assert "Nie ma ekranu" not in page.inner_text("main")
     assert not [e for e in page.errors if "404" not in e], page.errors
+
+
+def test_companies_list_on_phone(page, base_url):
+    page.goto(base_url + "/#/companies")
+    wait_ready(page)
+    assert page.inner_text("#bar-title") == "Spółki"
+    assert page.locator("#subnav button[aria-current='page']").inner_text() == "Lista"
+    assert "Na ostatniej sesji" in page.inner_text(".statement")
+    assert page.locator("table.data").first.locator("tbody tr").count() == 13
+    plus = page.locator("td.pos").first.inner_text()
+    assert plus.startswith("+")                                                  # znak, nie tylko kolor
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    # nagłówki są tekstem; odnośnik (gdy jest) otwiera się w nowej karcie bez dostępu do aplikacji
+    assert page.locator(".feed li").count() >= 5 and page.locator(".feed-tag").first.inner_text()
+    bad = page.evaluate("[...document.querySelectorAll('.feed a')].filter(a => a.target !== '_blank' || !a.rel.includes('noopener')).length")
+    assert bad == 0
+    page.locator(".segmented button", has_text="Termin raportu").tap()
+    page.wait_for_function("document.querySelector('.segmented button[aria-pressed=true]')?.textContent === 'Termin raportu'", timeout=30000)
+    wait_ready(page)
+    first = page.locator("table.data").first.locator("tbody tr").first.inner_text()
+    assert "za " in first or "dziś" in first or "jutro" in first
+    shot(page, "94-companies-list")
+    assert not page.errors, page.errors

@@ -119,6 +119,25 @@ Dział **Fundusz** układa te same dane tak, jak raportuje je fundusz long/short
 - **Limity** - monitor limitów ryzyka z własnymi progami: pozycja, sektor, top 5, ekspozycja brutto, VaR,
   obsunięcie, minimalna gotówka. Status: w normie / blisko / przekroczony.
 
+### Spółki: lista pozycji, raporty, wiadomości
+
+Dział **Spółki** otwiera się na zakładce **Lista** - to codzienny rzut oka na portfel:
+
+- **Twoje pozycje** - każda pozycja z bieżącą ceną, zmianą dzienną w procentach i w kwocie, wagą w portfelu,
+  wynikiem od ceny zakupu, odległością od szczytu z 52 tygodni i datą najbliższego raportu. Kolejność: według
+  wagi, zmiany dziennej albo terminu raportu. Wzrosty są zielone ze znakiem „+”, spadki czerwone.
+- **Najbliższe raporty kwartalne i roczne** - data, za ile dni, którego kwartału dotyczy (według roku
+  obrotowego spółki; Q4 to zarazem wyniki roczne), czy data jest potwierdzona, konsensus EPS i przychodów.
+- **Nadchodzące dywidendy** - dzień bez prawa do dywidendy i termin wypłaty.
+- **Wiadomości o spółkach** - najnowsze nagłówki (najwyżej 3 na spółkę) z odnośnikiem do wydawcy i filtrem spółki.
+
+Notowania, terminy i nagłówki pochodzą z Yahoo Finance; notowania odświeżają się co 10 minut, wiadomości co
+pół godziny, terminy co 12 godzin. Gdy bieżącej ceny nie da się pobrać, lista pokazuje ostatnie zamknięcie.
+Lista jest zawsze „na dziś” - nie zależy od wybranego okresu analizy. Skład portfela pochodzi z ostatniego
+eksportu z xStation, więc po transakcjach wgraj nowy plik.
+
+Druga zakładka, **Wycena**, to odwrócony DCF opisany niżej.
+
 ### Spółki: odwrócony DCF, prognozy, ceny docelowe
 
 Zakładka **Spółki** pokazuje dla wybranej akcji z portfela:
@@ -273,6 +292,10 @@ tests/    pytest: silnik, API, interfejs w przeglądarce (Playwright)
 - Przy rachunkach z różnymi datami raportu portfel jest liczony na datę najnowszego.
 - Mnożniki i stawki depozytu CFD pochodzą z tabeli wbudowanej w aplikację - sprawdź je dla swoich instrumentów
   w zakładce Tickery.
+- **Lista spółek**: bieżące notowania, terminy raportów i wiadomości z Yahoo nie były testowane na żywo
+  (środowisko budowy nie ma sieci) - testy używają danych w kształcie zwracanym przez bibliotekę yfinance.
+  Ceny bywają opóźnione, część dat raportów jest szacunkowa, nagłówki są zwykle po angielsku. „Dzień (kwota)”
+  to szacunek: wartość pozycji z daty raportu × zmiana ceny, bez zmiany kursu walut.
 - **Spółki**: dane z Yahoo Finance nie były testowane na żywo (środowisko budowy nie ma sieci) - testy używają
   danych podstawionych. Dla małych spółek i części rynków Yahoo nie podaje prognoz ani cen docelowych.
   Odwrócony DCF to model jednofazowy plus wzrost wieczny; dla banków, ubezpieczycieli i spółek z ujemnym FCF

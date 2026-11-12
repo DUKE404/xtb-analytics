@@ -288,3 +288,22 @@ wyceniony jak akcja lub po złym poziomie cen. Pliku nie widziałem, dlatego pop
 - **Limity**: progi domyślne (pozycja 15%, sektor 35%, top 5 60%, brutto 150%, VaR 95% 1d 3%, obsunięcie 20%,
   gotówka min 2%) to typowe ograniczenia portfela akcyjnego przyjęte jako punkt startu; „blisko” = od 80% progu.
 - **Epizody obsunięć**: od szczytu do pierwszego dnia z nowym szczytem; długości w dniach kalendarzowych.
+
+## Spółki / Lista: notowania, raporty, wiadomości
+
+- **Zakładka zamiast wycofanego Kalendarza**: terminy raportów wróciły jako część listy pozycji, bez kalendarza dni.
+- **Bieżąca cena** z `Ticker.info` (currentPrice / regularMarketPrice wobec regularMarketPreviousClose);
+  zmianę dzienną liczę sam z tych dwóch liczb. Zapas: dwa ostatnie zamknięcia z historii notowań.
+  Cena przechodzi przez `price_factor` z tabeli tickerów (np. pensy → funty).
+- **Cache**: notowanie 10 min, wiadomości 30 min, terminy 12 h; przy błędzie zostaje ostatnia zapisana wersja.
+  Wynik ekranu jest trzymany w sesji przez bieżące 10-minutowe okno.
+- **Lista jest „na dziś”**: korzysta z pełnego portfela (nie z okna analizy), ale respektuje „Bez CFD”.
+- **Dzień (kwota)** = ekspozycja pozycji z daty raportu × zmiana ceny; **zmiana wartości pozycji** = suma tych
+  kwot / kapitał. Bez efektu walutowego z tego dnia.
+- **Od zakupu** = cena wobec średniej ceny otwarcia ważonej wolumenem (w walucie instrumentu, bez dywidend).
+- **Od szczytu 52 tyg.** z najwyższego zamknięcia z 252 sesji historii notowań (i bieżącej ceny).
+- **Raporty i wiadomości** tylko dla akcji i CFD na akcje; ETF-y i CFD na indeksy mają samo notowanie.
+- **Wiadomości**: tylko tytuł, wydawca, czas i odnośnik (wyłącznie http/https, otwierany w nowej karcie);
+  treści artykułów nie pobieram. Najwyżej 3 nagłówki na spółkę, 15 łącznie.
+- **Kolumny ze znakiem** w tabelach (zielony plus, czerwony minus) są włączane per kolumna - tylko tam,
+  gdzie liczba jest zmianą lub wynikiem.

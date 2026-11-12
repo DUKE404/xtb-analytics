@@ -149,6 +149,15 @@ button.row[aria-expanded="true"] .hint { border-color: var(--brass); color: var(
 .bullets li:first-child { border-top: 1px solid var(--line); }
 .bullets strong { font-family: var(--sans); font-size: 14px; font-weight: 600; color: var(--ink); }
 
+.feed { margin: 0; padding: 0; list-style: none; }
+.feed li { display: grid; gap: 3px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.feed li:first-child { border-top: 1px solid var(--line); }
+.feed-tag { font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--brass); }
+.feed-title { font: 500 16px/1.4 var(--serif); color: var(--ink); text-decoration: none; text-wrap: pretty; }
+a.feed-title:hover, a.feed-title:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+.feed small { font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+td.pos { color: var(--pos); }
+
 /* ---------- kontrolki ---------- */
 .controls { display: grid; gap: 14px; }
 .controls.grid { grid-template-columns: 1fr 1fr; column-gap: 12px; align-items: end; }
@@ -393,4 +402,5 @@ pre.json { margin: 0; padding: 12px; background: var(--panel); border-radius: 8p
   table.data tbody tr:hover td { background: var(--raised); }
   .sheet { left: 50%; right: auto; bottom: auto; top: 10vh; width: 520px; max-height: 80vh; transform: translateX(-50%); border-radius: 16px; }
   .menu, .login, .steps { max-width: 760px; }
+  main .screen .feed { max-width: 860px; }
 }

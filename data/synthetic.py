@@ -192,6 +192,42 @@ class SyntheticMarketData:
         s, cur = self.market.benchmark(key)
         return s.loc[pd.Timestamp(start):pd.Timestamp(end)], cur
 
+    def brief(self, row, today=None, parts=("quote", "events", "news")) -> dict:
+        """Karta spółki w trybie demo: notowanie z syntetycznych cen, zmyślone terminy, przykładowe nagłówki."""
+        import zlib
+        seed = zlib.crc32(("ev" + str(row["symbol"])).encode())
+        rng = np.random.default_rng(seed)
+        today = pd.Timestamp(today or self.market.dates[-1]).normalize()
+        out = {"quote": None, "events": None, "news": None, "ticker": row.get("yf_ticker") or row["symbol"]}
+        if "quote" in parts:
+            px = self.price_history(row, today - pd.Timedelta(days=20), today)["close"].dropna()
+            if len(px) >= 2:
+                out["quote"] = {"price": float(px.iloc[-1]), "prev_close": float(px.iloc[-2]),
+                                "time": px.index[-1].strftime("%Y-%m-%dT16:00:00Z"), "currency": row.get("currency"),
+                                "state": "CLOSED", "source": "dane syntetyczne (demo)"}
+        if "events" in parts:
+            nxt = today + pd.Timedelta(days=int(seed % 80) + 1)
+            while nxt.weekday() >= 5:
+                nxt += pd.Timedelta(days=1)
+            eps = float(rng.uniform(0.5, 6.0))
+            ex = today + pd.Timedelta(days=int(seed % 50) + 3) if seed % 3 == 0 else None
+            out["events"] = {
+                "ticker": out["ticker"], "earnings": [nxt.strftime("%Y-%m-%d")], "estimated": bool(seed % 4 == 0),
+                "eps_avg": eps, "eps_low": eps * 0.9, "eps_high": eps * 1.1, "rev_avg": float(rng.uniform(2, 90)) * 1e9,
+                "rev_low": None, "rev_high": None, "ex_dividend": ex.strftime("%Y-%m-%d") if ex is not None else None,
+                "dividend_date": None, "dividend_rate": float(rng.uniform(0.5, 4.0)) if ex is not None else None,
+                "fy_end_month": [12, 12, 12, 9, 6, 1][seed % 6], "currency": row.get("currency", "USD"),
+                "last_quarter_end": None, "last_eps_actual": None, "last_eps_estimate": None, "last_surprise": None,
+                "source": "dane syntetyczne (demo)", "fetched": str(today.date())}
+        if "news" in parts:
+            name = row.get("name") or row["symbol"]
+            kinds = ["przykładowy nagłówek o wynikach kwartalnych", "przykładowy nagłówek o rekomendacji analityków",
+                     "przykładowy nagłówek o nowym produkcie"]
+            out["news"] = [{"title": f"{name}: {kinds[(seed + k) % 3]} (tryb demo)", "source": "demo",
+                            "time": (today - pd.Timedelta(hours=int((seed >> k) % 70) + 2 + 9 * k)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                            "url": ""} for k in range(2)]
+        return out
+
     def fundamentals(self, row) -> dict:
         """Zmyślone, ale spójne dane o spółce - żeby moduł działał w trybie demo bez sieci."""
         import zlib

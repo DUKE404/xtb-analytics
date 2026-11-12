@@ -152,6 +152,16 @@ def note(text: str, tone: str = "info") -> dict:
     return {"kind": "note", "text": text, "tone": tone}
 
 
+def feed(items: list[dict], title: str | None = None, caption: str | None = None) -> dict:
+    """Lista nagłówków: {"title", "source", "time" (ISO, UTC), "url" (http/https albo pusty), "tag"}."""
+    clean = []
+    for it in items:
+        url = str(it.get("url") or "")
+        clean.append({"title": str(it.get("title") or ""), "source": it.get("source") or None, "time": it.get("time") or None,
+                      "url": url if url.lower().startswith(("https://", "http://")) else None, "tag": it.get("tag") or None})
+    return {"kind": "feed", "title": title, "caption": caption, "items": clean}
+
+
 def bullets(items: list[str], title: str | None = None) -> dict:
     return {"kind": "bullets", "title": title, "items": items}
 
@@ -186,9 +196,10 @@ def chart(spec: dict, title: str | None = None, caption: str | None = None) -> d
 
 def table(df: pd.DataFrame, columns: list[tuple], title: str | None = None, caption: str | None = None,
           limit: int = 12) -> dict:
-    """columns: (kolumna w df, nagłówek, fmt[, cyfry]). Pierwsza kolumna jest przypięta przy przewijaniu."""
+    """columns: (kolumna w df, nagłówek, fmt[, cyfry[, ze znakiem]]). Pierwsza kolumna jest przypięta przy przewijaniu.
+    `ze znakiem`: liczba jest zmianą lub wynikiem - plus na zielono z „+”, minus na czerwono."""
     cols = [{"key": c[0], "label": c[1], "fmt": c[2] if len(c) > 2 else "text",
-             "digits": c[3] if len(c) > 3 else None} for c in columns]
+             "digits": c[3] if len(c) > 3 else None, "signed": bool(c[4]) if len(c) > 4 else False} for c in columns]
     rows = df[[c["key"] for c in cols]].to_dict("records") if len(df) else []
     return {"kind": "table", "title": title, "caption": caption, "columns": cols, "rows": rows, "limit": limit}
 

@@ -289,6 +289,121 @@ def fetch_fundamentals(ticker: str) -> dict:
     }
 
 
+def _ts(v):
+    """Data z yfinance (date, datetime, Timestamp albo sekundy epoki) -> 'RRRR-MM-DD' lub None."""
+    if v is None:
+        return None
+    try:
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            if v != v or v <= 0:
+                return None
+            return pd.Timestamp(int(v), unit="s").strftime("%Y-%m-%d")
+        t = pd.Timestamp(v)
+        return None if pd.isna(t) else t.strftime("%Y-%m-%d")
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _f(v):
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return None
+    return v if v == v else None
+
+
+def parse_events(ticker: str, cal, info: dict | None, history=None) -> dict:
+    """Terminy i oczekiwania z yfinance: Ticker.calendar (słownik), Ticker.info, Ticker.earnings_history."""
+    cal = cal if isinstance(cal, dict) else {}
+    info = info or {}
+    dates = cal.get("Earnings Date") or []
+    dates = [dates] if not isinstance(dates, (list, tuple)) else list(dates)
+    dates = [x for x in (_ts(d) for d in dates) if x]
+    if not dates:
+        dates = [x for x in (_ts(info.get(k)) for k in ("earningsTimestampStart", "earningsTimestamp")) if x][:1]
+    fy = _ts(info.get("nextFiscalYearEnd")) or _ts(info.get("lastFiscalYearEnd"))
+    last = {}
+    if history is not None and hasattr(history, "iterrows") and len(history):
+        h = history.copy()
+        try:
+            h.index = pd.to_datetime(h.index)
+            h = h.sort_index()
+        except (TypeError, ValueError):
+            pass
+        row = h.iloc[-1]
+        last = {"last_quarter_end": _ts(h.index[-1]), "last_eps_actual": _f(row.get("epsActual")),
+                "last_eps_estimate": _f(row.get("epsEstimate")), "last_surprise": _f(row.get("surprisePercent"))}
+    return {
+        "ticker": ticker, "earnings": sorted(set(dates)),
+        "estimated": bool(info.get("isEarningsDateEstimate", len(dates) > 1)),
+        "eps_avg": _f(cal.get("Earnings Average")), "eps_low": _f(cal.get("Earnings Low")), "eps_high": _f(cal.get("Earnings High")),
+        "rev_avg": _f(cal.get("Revenue Average")), "rev_low": _f(cal.get("Revenue Low")), "rev_high": _f(cal.get("Revenue High")),
+        "ex_dividend": _ts(cal.get("Ex-Dividend Date")) or _ts(info.get("exDividendDate")),
+        "dividend_date": _ts(cal.get("Dividend Date")) or _ts(info.get("dividendDate")),
+        "dividend_rate": _f(info.get("dividendRate")),
+        "fy_end_month": int(fy[5:7]) if fy else None, "currency": info.get("currency"),
+        **{k: None for k in ("last_quarter_end", "last_eps_actual", "last_eps_estimate", "last_surprise")}, **last,
+        "source": "Yahoo Finance", "fetched": pd.Timestamp.now().strftime("%Y-%m-%d"),
+    }
+
+
+def parse_quote(info: dict | None) -> dict | None:
+    """Bieżące notowanie z Ticker.info: cena, poprzednie zamknięcie, czas notowania (ISO, UTC), waluta."""
+    info = info or {}
+    price = next((_f(info.get(k)) for k in ("currentPrice", "regularMarketPrice") if _f(info.get(k))), None)
+    prev = next((_f(info.get(k)) for k in ("regularMarketPreviousClose", "previousClose") if _f(info.get(k))), None)
+    if not price or not prev:
+        return None
+    when = info.get("regularMarketTime")
+    try:
+        when = pd.Timestamp(int(when), unit="s").strftime("%Y-%m-%dT%H:%M:%SZ") if when else None
+    except (TypeError, ValueError, OverflowError):
+        when = None
+    return {"price": price, "prev_close": prev, "time": when, "currency": info.get("currency"),
+            "state": info.get("marketState"), "source": "Yahoo Finance"}
+
+
+def parse_news(items, limit: int = 6) -> list[dict]:
+    """Nagłówki z Ticker.news. Obsługuje nowy kształt ({"content": {...}}) i dawny (płaski słownik).
+
+    Zostają tylko: tytuł, wydawca, czas i odnośnik http(s) - treści artykułów nie pobieramy.
+    """
+    out = []
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        c = it.get("content") if isinstance(it.get("content"), dict) else it
+        title = str(c.get("title") or "").strip()
+        if not title:
+            continue
+        url = ""
+        for key in ("canonicalUrl", "clickThroughUrl"):
+            u = c.get(key)
+            if isinstance(u, dict) and u.get("url"):
+                url = str(u["url"])
+                break
+        url = url or str(c.get("link") or "")
+        if not url.lower().startswith(("https://", "http://")):
+            url = ""
+        prov = c.get("provider")
+        source = (prov.get("displayName") if isinstance(prov, dict) else None) or c.get("publisher") or ""
+        when = c.get("pubDate") or c.get("displayTime")
+        try:
+            if when:
+                t = pd.Timestamp(when)
+                t = t.tz_convert("UTC") if t.tzinfo else t
+            elif c.get("providerPublishTime"):
+                t = pd.Timestamp(int(c["providerPublishTime"]), unit="s")
+            else:
+                t = None
+            when = t.strftime("%Y-%m-%dT%H:%M:%SZ") if t is not None and not pd.isna(t) else None
+        except (TypeError, ValueError, OverflowError):
+            when = None
+        out.append({"title": title[:220], "source": str(source)[:60], "time": when, "url": url})
+    out.sort(key=lambda r: r["time"] or "", reverse=True)
+    return out[:limit]
+
+
 class LiveMarketData:
     name = "na żywo (yfinance → Stooq, NBP)"
     is_synthetic = False
@@ -321,6 +436,58 @@ class LiveMarketData:
         if factor != 1.0:
             df = df.assign(close=df["close"] * factor)
         return df
+
+    BRIEF_TTL_HOURS = {"quote": 10 / 60, "events": 12.0, "news": 0.5}
+
+    def brief(self, row, today=None, parts=("quote", "events", "news")) -> dict:
+        """Krótka karta spółki: bieżące notowanie, terminy raportów i dywidend, nagłówki wiadomości.
+
+        Każda część ma własny czas życia w cache (notowanie 10 min, wiadomości 30 min, terminy 12 h).
+        Gdy pobranie się nie uda, wraca ostatnia zapisana wersja; brakująca część ma wartość None.
+        """
+        ticker = next((x.strip() for x in str(row.get("yf_ticker") or "").split("|") if x.strip()), "")
+        if not ticker:
+            raise DataUnavailable("brak tickera Yahoo w tabeli mapowań")
+        out = {p: None for p in ("quote", "events", "news")}
+        missing = []
+        for part in parts:
+            hit = self.cache.get_kv(f"{part}:{ticker}", max_age_hours=self.BRIEF_TTL_HOURS[part])
+            if hit:
+                out[part] = json.loads(hit)
+            else:
+                missing.append(part)
+        if missing:
+            try:
+                import yfinance as yf
+                t = yf.Ticker(ticker)
+            except Exception:                      # brak biblioteki albo sieci: zostaje to, co jest w cache
+                t = None
+
+            def safe(fn):
+                try:
+                    return fn()
+                except Exception:
+                    return None
+
+            info = safe(lambda: dict(t.info)) if t is not None and {"quote", "events"} & set(missing) else None
+            fresh = {}
+            if "quote" in missing:
+                fresh["quote"] = parse_quote(info)
+            if "events" in missing and t is not None:
+                cal = safe(lambda: t.calendar)
+                fresh["events"] = parse_events(ticker, cal, info) if (cal or info) else None
+            if "news" in missing and t is not None:
+                items = safe(lambda: t.news)
+                fresh["news"] = parse_news(items) if items is not None else None
+            for part in missing:
+                if fresh.get(part) is not None:
+                    out[part] = fresh[part]
+                    self.cache.set_kv(f"{part}:{ticker}", json.dumps(fresh[part]))
+                else:
+                    old = self.cache.get_kv(f"{part}:{ticker}")       # stara wersja lepsza niż nic
+                    out[part] = json.loads(old) if old else None
+        out["ticker"] = ticker
+        return out
 
     def fundamentals(self, row) -> dict:
         """Dane o spółce (cache 24 h)."""
