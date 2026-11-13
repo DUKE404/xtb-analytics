@@ -322,12 +322,38 @@ def quotes(ctx, p) -> dict:
 # Kalendarz makro
 # --------------------------------------------------------------------------- #
 
+def _calendar_unavailable(title: str, d: dict | None) -> dict:
+    """Brak kalendarza: prosto, dlaczego, kiedy kolejna próba i jak włączyć drugie źródło."""
+    info = (d or {}).get("calendar_info") or {}
+    pause = info.get("pause_until")
+    when = _local(pd.Timestamp(pause, unit="s", tz="UTC")).strftime("%H:%M") if pause else None
+    if pause:
+        lead = "Źródło kalendarza chwilowo nie przyjmuje zapytań z serwera."
+        sub = (f"Forex Factory ogranicza liczbę pobrań, a serwery Render dzielą adresy z innymi aplikacjami. "
+               f"Kolejna próba po {when}; udany odczyt zostaje zapisany na kilka godzin.")
+    else:
+        lead = "Nie udało się pobrać kalendarza publikacji makroekonomicznych."
+        sub = "Spróbuj ponownie za kilka minut."
+    blocks = [B.statement(lead, sub)]
+    if not info.get("fred_enabled"):
+        blocks.append(B.bullets([
+            "**Drugie źródło (zalecane):** oficjalne terminy publikacji z USA z FRED (Fed St. Louis) - CPI, rynek pracy, "
+            "PKB, PCE, sprzedaż detaliczna, decyzje Fed - na 3 tygodnie do przodu, bez limitów.",
+            "**Jak włączyć:** załóż darmowe konto na fredaccount.stlouisfed.org, w „API Keys” wygeneruj klucz i dodaj go "
+            "w panelu Render jako zmienną środowiskową FRED_API_KEY. Serwer uruchomi się ponownie sam.",
+        ], "Jak uniezależnić kalendarz od limitów"))
+    for w in (d or {}).get("warnings", []):
+        if w.startswith("Kalendarz"):
+            blocks.append(B.note(w, "warn"))
+    return {"title": title, "blocks": blocks}
+
+
 def calendar(ctx, p) -> dict:
     title = "Kalendarz makro"
     d = _data(ctx)
     events = (d or {}).get("calendar")
     if events is None:
-        return _unavailable(title, "kalendarz publikacji makroekonomicznych", d)
+        return _calendar_unavailable(title, d)
     region = p.str("region", "us", [r[0] for r in REGIONS])
     imp = p.str("impact", "medium", [i[0] for i in IMPACTS])
     now = pd.Timestamp(d.get("now") or pd.Timestamp.now(tz="UTC"))
@@ -366,8 +392,12 @@ def calendar(ctx, p) -> dict:
             "country": COUNTRIES.get(e.get("country"), e.get("country") or "–"), "impact": IMPACT.get(e.get("impact"), "–"),
             "forecast": _pl_number(e.get("forecast")), "previous": _pl_number(e.get("previous")),
             "actual": _pl_number(e.get("actual"))})
-    cols = [("time", "Godzina", "text"), ("title", "Dane", "text"), ("impact", "Waga", "text"),
-            ("forecast", "Prognoza", "text"), ("previous", "Poprzednio", "text")]
+    cols = [("time", "Godzina", "text"), ("title", "Dane", "text"), ("impact", "Waga", "text")]
+    all_rows = [r for rows in by_day.values() for r in rows]
+    if any(r["forecast"] != "–" for r in all_rows):
+        cols.append(("forecast", "Prognoza", "text"))
+    if any(r["previous"] != "–" for r in all_rows):
+        cols.append(("previous", "Poprzednio", "text"))
     if any(r["actual"] != "–" for rows in by_day.values() for r in rows):
         cols.insert(3, ("actual", "Odczyt", "text"))
     if region != "us":
@@ -384,6 +414,12 @@ def calendar(ctx, p) -> dict:
     for w in d.get("warnings", []):
         if w.startswith("Kalendarz"):
             blocks.append(B.note(w, "warn"))
-    blocks.append(_src_note(d, "calendar_source", "Waga publikacji (●●● najważniejsze) według źródła. Prognozy to mediana oczekiwań "
-                                                  "rynku; terminy potrafią się przesuwać."))
+    info = d.get("calendar_info") or {}
+    fetched = info.get("fetched")
+    extra = (f"Stan z {_local(pd.Timestamp(fetched, unit='s', tz='UTC')):%d.%m, %H:%M}. " if fetched else "")
+    extra += ("Waga publikacji (●●● najważniejsze) według źródła; prognozy to mediana oczekiwań rynku. "
+              if info.get("forecasts", True) else "")
+    if "FRED" in str(d.get("calendar_source") or ""):
+        extra += "FRED podaje oficjalne daty publikacji z USA (bez prognoz); godziny to stałe pory publikacji tych raportów. "
+    blocks.append(_src_note(d, "calendar_source", extra + "Terminy potrafią się przesuwać."))
     return {"title": title, "blocks": blocks}

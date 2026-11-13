@@ -94,6 +94,10 @@ def create_app(store: SessionStore | None = None, provider_factory=None, account
             app.logger.error("Baza kont niedostępna: %s", db_error)
     users = accounts
     app.extensions["accounts"] = users
+    if users is not None and getattr(users, "db", None) is not None:
+        from data import markets as market_data
+        from server.db import SharedMarketCache
+        market_data.set_shared_store(SharedMarketCache(users.db))   # kalendarz i krzywa przetrwają restart serwera
 
     def client_ip() -> str:
         # Render stawia aplikację za własnym serwerem pośredniczącym: pierwszy adres z X-Forwarded-For to klient

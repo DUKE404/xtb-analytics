@@ -125,7 +125,9 @@ def test_live_markets_fallbacks_and_stale_cache(monkeypatch):
     monkeypatch.setattr(D, "fetch_treasury", treasury)
     monkeypatch.setattr(D, "fetch_fred", lambda t: D.parse_fred_csv(FRED_CSV))
     monkeypatch.setattr(D, "fetch_instrument", lambda k, t: (_fake_series(t), "Yahoo Finance"))
-    monkeypatch.setattr(D, "fetch_calendar", lambda: D.parse_calendar_json(CALENDAR_JSON))
+    monkeypatch.setattr(D, "fetch_calendar_ff", lambda: D.parse_calendar_json(CALENDAR_JSON))
+    monkeypatch.setattr(D, "_shared", None)
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
     cache = FakeCache()
     m = D.live_markets(cache, today, workers=1)
     assert m["yields_source"] == "FRED" and m["yields"]["10Y"].iloc[-1] == pytest.approx(4.12)
@@ -139,7 +141,7 @@ def test_live_markets_fallbacks_and_stale_cache(monkeypatch):
     # cache przeterminowany, sieć padła: zostaje stara kopia + ostrzeżenie
     cache.expire()
     boom = lambda *a: (_ for _ in ()).throw(RuntimeError("brak sieci"))   # noqa: E731
-    for name in ("fetch_treasury", "fetch_fred", "fetch_yahoo_yields", "fetch_instrument", "fetch_calendar"):
+    for name in ("fetch_treasury", "fetch_fred", "fetch_yahoo_yields", "fetch_instrument", "fetch_calendar_ff"):
         monkeypatch.setattr(D, name, boom)
     m2 = D.live_markets(cache, today, workers=1)
     assert m2["yields"]["10Y"].iloc[-1] == pytest.approx(4.12) and len(m2["prices"]) == len(D.INSTRUMENTS)
@@ -196,3 +198,124 @@ def test_rates_screen_with_partial_curve_and_calendar_filters():
     allr = S.calendar(_Ctx(data), Params({"region": "all", "impact": "all"}))
     rows = [r for b in allr["blocks"] if b["kind"] == "section" for r in b["blocks"][0]["rows"]]
     assert {r["country"] for r in rows} == {"USA", "Strefa euro"}
+
+
+FRED_RELEASES_JSON = {"release_dates": [
+    {"release_id": 10, "release_name": "Consumer Price Index", "date": "2026-11-18"},
+    {"release_id": 50, "release_name": "Employment Situation", "date": "2026-12-04"},
+    {"release_id": 101, "release_name": "FOMC Press Release", "date": "2026-12-09"},
+    {"release_id": 21, "release_name": "H.6 Money Stock Measures", "date": "2026-11-24"},
+    {"release_id": 10, "release_name": "Consumer Price Index", "date": "2026-11-18"},
+    {"release_id": 1, "release_name": "Bad", "date": "jutro"},
+]}
+
+
+def test_parse_fred_release_dates_keeps_known_releases_in_utc():
+    ev = D.parse_fred_release_dates(FRED_RELEASES_JSON)
+    assert [e["title"] for e in ev] == ["Inflacja CPI", "Raport z rynku pracy (NFP, stopa bezrobocia)", "Decyzja Fed w sprawie stóp"]
+    assert ev[0]["time"] == "2026-11-18T13:30:00Z"          # 8:30 w Nowym Jorku (czas zimowy) = 13:30 UTC
+    assert ev[2]["time"] == "2026-12-09T19:00:00Z" and all(e["country"] == "USD" for e in ev)
+    assert ev[0]["impact"] == "High" and ev[0]["forecast"] == ""
+
+
+def test_merge_calendars_adds_fred_after_forex_factory_week():
+    ff = D.parse_calendar_json(CALENDAR_JSON)                 # tydzień 08-14.11.2026
+    fred = D.parse_fred_release_dates(FRED_RELEASES_JSON) + D.parse_fred_release_dates(
+        {"release_dates": [{"release_name": "Consumer Price Index", "date": "2026-11-13"}]})
+    merged = D.merge_calendars(ff, fred)
+    titles = [e["title"] for e in merged]
+    assert titles.count("Inflacja CPI") == 1                 # 13.11 pokrywa Forex Factory; zostaje 18.11 z FRED
+    assert "CPI y/y" in titles and "Decyzja Fed w sprawie stóp" in titles
+    assert D.merge_calendars(None, fred) == fred
+
+
+class _Shared:
+    def __init__(self):
+        self.kv = {}
+
+    def get(self, key):
+        return self.kv.get(key)
+
+    def set(self, key, value):
+        import time as _t
+        self.kv[key] = (value, _t.time())
+
+
+def test_calendar_rate_limit_pauses_and_shared_copy_survives_restart(monkeypatch):
+    today = pd.Timestamp("2026-11-12")
+    calls = {"ff": 0}
+
+    def limited():
+        calls["ff"] += 1
+        raise D.RateLimited("nfs.faireconomy.media: HTTP 429 (limit zapytań)", 120)
+
+    shared = _Shared()
+    monkeypatch.setattr(D, "_shared", shared)
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    monkeypatch.setattr(D, "fetch_calendar_ff", limited)
+    warnings = []
+    out = D.live_calendar(FakeCache(), today, warnings)
+    assert out["events"] is None and out["pause_until"] and out["fred_enabled"] is False
+    assert out["pause_until"] - __import__("time").time() >= D.FF_BACKOFF_MIN - 5   # co najmniej 30 minut przerwy
+    # druga próba (nawet z nowym, pustym cache lokalnym - restart serwera) nie pyta źródła w trakcie przerwy
+    D.live_calendar(FakeCache(), today, [])
+    assert calls["ff"] == 1
+
+    # udany odczyt trafia do wspólnego magazynu i jest widoczny po restarcie (pusty cache lokalny)
+    shared.kv.pop("mk:ff:pause")
+    monkeypatch.setattr(D, "fetch_calendar_ff", lambda: D.parse_calendar_json(CALENDAR_JSON))
+    ok = D.live_calendar(FakeCache(), today, [])
+    assert ok["source"] == "Forex Factory" and len(ok["events"]) == 2
+    monkeypatch.setattr(D, "fetch_calendar_ff", limited)
+    again = D.live_calendar(FakeCache(), today, [])
+    assert again["events"] == ok["events"] and calls["ff"] == 1
+
+
+def test_calendar_uses_fred_when_forex_factory_refuses_and_hides_key(monkeypatch):
+    monkeypatch.setattr(D, "_shared", None)
+    monkeypatch.setenv("FRED_API_KEY", "tajny-klucz-123")
+    monkeypatch.setattr(D, "fetch_calendar_ff", lambda: (_ for _ in ()).throw(D.RateLimited("HTTP 429", 0)))
+    monkeypatch.setattr(D, "fetch_calendar_fred", lambda t, k: D.parse_fred_release_dates(FRED_RELEASES_JSON))
+    out = D.live_calendar(FakeCache(), pd.Timestamp("2026-11-12"), [])
+    assert out["source"] == "FRED" and out["forecasts"] is False and len(out["events"]) == 3
+
+    def boom(t, k):
+        raise RuntimeError(f"connection to https://api.stlouisfed.org/...api_key={k} failed")
+    monkeypatch.setattr(D, "fetch_calendar_fred", boom)
+    warnings = []
+    D.live_calendar(FakeCache(), pd.Timestamp("2026-11-12"), warnings)
+    assert warnings and "tajny-klucz-123" not in " ".join(warnings) and "***" in " ".join(warnings)
+
+
+def test_get_reports_rate_limit_and_strips_secret(monkeypatch):
+    import data.providers as P
+
+    class R:
+        status_code, headers = 429, {"Retry-After": "600"}
+    monkeypatch.setattr(P, "_http_get", lambda url, timeout=20: R())
+    with pytest.raises(D.RateLimited) as e:
+        D._get("https://nfs.faireconomy.media/x.json")
+    assert e.value.retry_after == 600
+
+    def fail(url, timeout=20):
+        raise ConnectionError(f"Max retries exceeded with url: {url}")
+    monkeypatch.setattr(P, "_http_get", fail)
+    with pytest.raises(P.DataUnavailable) as e:
+        D._get("https://api.stlouisfed.org/fred/x?api_key=SEKRET", secret="SEKRET")
+    assert "SEKRET" not in str(e.value)
+
+
+def test_calendar_screen_explains_pause_and_fred_only_hides_forecasts():
+    from server.screens import Params
+    from server.screens import markets as S
+    pause = __import__("time").time() + 1800
+    out = S.calendar(_Ctx({"calendar": None, "warnings": [], "calendar_info": {"pause_until": pause, "fred_enabled": False}}),
+                     Params())
+    text = " ".join(b.get("text", "") + " " + (b.get("sub") or "") + " ".join(b.get("items", [])) for b in out["blocks"])
+    assert "nie przyjmuje zapytań" in text and "FRED_API_KEY" in text
+    data = {"calendar": D.parse_fred_release_dates(FRED_RELEASES_JSON), "calendar_source": "FRED", "warnings": [],
+            "calendar_info": {"forecasts": False, "fetched": pause}, "now": pd.Timestamp("2026-11-12T08:00:00Z")}
+    cal = S.calendar(_Ctx(data), Params({"impact": "all"}))
+    table = next(b["blocks"][0] for b in cal["blocks"] if b["kind"] == "section")
+    assert [c["key"] for c in table["columns"]] == ["time", "title", "impact"]     # bez pustych kolumn prognoz
+    assert "Inflacja CPI" in cal["blocks"][0]["text"]

@@ -53,6 +53,12 @@ SCHEMA = [
         used_by TEXT,
         used_at INTEGER
     )""",
+    # publiczne dane rynkowe (kalendarz makro, krzywa rentowności) - przetrwają uśpienie darmowej instancji Render
+    """CREATE TABLE IF NOT EXISTS market_cache (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated INTEGER NOT NULL
+    )""",
 ]
 
 
@@ -217,3 +223,20 @@ class Database:
                     self._conn.close()
                 finally:
                     self._conn = None
+
+
+class SharedMarketCache:
+    """Wspólny cache danych rynkowych w bazie kont (tylko dane publiczne, nic o użytkownikach)."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    def get(self, key: str):
+        row = self.db.one("SELECT value, updated FROM market_cache WHERE key = ?", (key,))
+        return (row["value"], row["updated"]) if row else None
+
+    def set(self, key: str, value: str) -> None:
+        self.db.execute("INSERT INTO market_cache (key, value, updated) VALUES (?, ?, ?) "
+                        "ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated = excluded.updated",
+                        (key, value, int(time.time())))
+

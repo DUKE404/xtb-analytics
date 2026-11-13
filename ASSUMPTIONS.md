@@ -424,3 +424,17 @@ kluczem z hasła użytkownika.
 - Dolny pasek: aktywna zakładka ma ikonę na mosiężnej „pigułce”. Menu „Więcej”: pogrupowane listy w kartach.
 - Na komputerze kafelki liczb zostają osobnymi kartami (bez zewnętrznej karty), tabela nie ma podwójnej ramki.
 
+### Kalendarz makro: limity Forex Factory
+- Na Render plik tygodniowy Forex Factory odpowiadał HTTP 429 (limit zapytań; adresy darmowych instancji są
+  współdzielone), a plik „następny tydzień” nie istnieje (404) - usunięty.
+- Po 429 (albo innym błędzie) aplikacja nie pyta źródła przez max(30 min, Retry-After) - przerwa zapisana też
+  w bazie, więc restart jej nie kasuje. Udany odczyt ważny 6 h.
+- Kalendarz i krzywa rentowności zapisują się w tabeli `market_cache` w bazie kont (Neon) - tylko publiczne dane
+  rynkowe. Lokalny SQLite na darmowym Render znika przy uśpieniu, więc bez tego każda pobudka zaczynała od zera.
+- Drugie źródło: FRED (`fred/releases/dates`, darmowy klucz `FRED_API_KEY`). Dobrane po nazwie publikacji
+  (CPI, Employment Situation, PCE, GDP, Retail Sales, FOMC, PPI, JOLTS, zasiłki, UMich…); godziny to stałe pory
+  publikacji w Nowym Jorku przeliczone na UTC. Forex Factory ma pierwszeństwo w swoim tygodniu (ma prognozy),
+  FRED dokłada kolejne tygodnie. Klucz jest wycinany z komunikatów błędów i logów.
+- Nie podszywam się pod przeglądarkę, żeby obejść limity serwisów - używam tylko źródeł, które pozwalają na
+  pobieranie przez aplikacje.
+

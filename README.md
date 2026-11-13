@@ -57,6 +57,8 @@ a jego darmowa baza wygasa po 30 dniach, więc baza jest osobno.
    - `APP_PASSWORD` - **kod konfiguracji**: wymyśl długi ciąg znaków. Będzie potrzebny tylko raz, do założenia
      pierwszego konta (administratora). Dopóki konto nie istnieje, kod pilnuje, żeby nikt obcy go nie przejął.
    - `ANTHROPIC_API_KEY` - zostaw puste, chyba że chcesz włączyć dział AI (patrz niżej).
+   - `FRED_API_KEY` - opcjonalnie, darmowy klucz FRED: kalendarz makro działa wtedy niezależnie od limitów
+     Forex Factory (patrz „Rynki”).
    - `SECRET_KEY` Render wygeneruje sam.
 4. Kliknij **Apply**. Pierwsze budowanie trwa kilka minut. Na końcu dostaniesz adres w rodzaju
    `https://xtb-analytics-abcd.onrender.com`.
@@ -201,9 +203,21 @@ okresu analizy (dlatego nie ma tu paska „Okres”):
   polskim, z prognozą i poprzednim odczytem. Domyślnie USA i dane ważne; filtry: USA / USA i Europa / wszystkie
   kraje oraz waga danych.
 
-Źródła (bez kluczy API): krzywa - US Treasury (zapasowo FRED, a potem Yahoo), notowania - Yahoo Finance
-(zapasowo Stooq), kalendarz - Forex Factory. Krzywa odświeża się co 3 godziny, notowania co 15 minut, kalendarz
-co godzinę; gdy źródło nie odpowiada, widać ostatnią zapisaną wersję z ostrzeżeniem. W trybie demo dane są zmyślone.
+Źródła: krzywa - US Treasury (zapasowo FRED, a potem Yahoo), notowania - Yahoo Finance (zapasowo Stooq),
+kalendarz - Forex Factory (bieżący tydzień, z prognozami) i opcjonalnie FRED (oficjalne terminy z USA na 3 tygodnie).
+Krzywa odświeża się co 3 godziny, notowania co 15 minut, kalendarz co 6 godzin; gdy źródło nie odpowiada, widać
+ostatnią zapisaną wersję z ostrzeżeniem. Kalendarz i krzywa zapisują się też w bazie (Neon), więc przetrwają
+uśpienie serwera. W trybie demo dane są zmyślone.
+
+**Kalendarz a limity.** Forex Factory ogranicza liczbę pobrań (HTTP 429), a darmowe serwery Render dzielą adresy
+z innymi aplikacjami - dlatego po odmowie aplikacja robi co najmniej 30 minut przerwy. Żeby kalendarz działał
+niezależnie od tego, włącz drugie źródło:
+
+1. Załóż darmowe konto na fredaccount.stlouisfed.org i w zakładce „API Keys” wygeneruj klucz.
+2. W panelu Render (usługa `xtb-analytics` → Environment) dodaj zmienną `FRED_API_KEY` z tym kluczem.
+
+FRED podaje oficjalne daty publikacji z USA (CPI, rynek pracy, PKB, PCE, sprzedaż detaliczna, PPI, JOLTS, decyzje
+Fed…), bez prognoz; godziny to stałe pory publikacji tych raportów.
 
 ### Pozycje: wycena spółek (odwrócony DCF, prognozy, ceny docelowe)
 

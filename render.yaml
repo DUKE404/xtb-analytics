@@ -21,6 +21,8 @@ services:
         generateValue: true
       - key: ANTHROPIC_API_KEY   # opcjonalnie: włącza dział AI; można zostawić puste
         sync: false
+      - key: FRED_API_KEY        # opcjonalnie: darmowy klucz FRED - kalendarz makro niezależny od limitów Forex Factory
+        sync: false
     # Szybsze pierwsze otwarcie: darmowa instancja po uśpieniu traci pobrane notowania i pobiera je od nowa.
     # Na płatnym planie (instancja nie zasypia) można dodać trwały dysk i wskazać go zmienną CACHE_DIR, np.:
     #   plan: starter

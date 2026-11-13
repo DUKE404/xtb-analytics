@@ -13,17 +13,26 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
 
+from data.providers import DataUnavailable
+
 TREASURY_URL = ("https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/"
                 "{year}/all?type=daily_treasury_yield_curve&field_tdr_date_value={year}&page&_format=csv")
 FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={ids}"
-CALENDAR_URLS = ("https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-                 "https://nfs.faireconomy.media/ff_calendar_nextweek.json")
+# Forex Factory publikuje tylko bieżący tydzień i limituje zapytania (HTTP 429) - stąd długi cache i przerwy
+CALENDAR_URLS = ("https://nfs.faireconomy.media/ff_calendar_thisweek.json",)
+FRED_RELEASES_URL = ("https://api.stlouisfed.org/fred/releases/dates?api_key={key}&file_type=json"
+                     "&realtime_start={start}&realtime_end={end}&include_release_dates_with_no_data=true"
+                     "&sort_order=asc&order_by=release_date&limit=1000")
+FRED_DAYS = 21                # ile dni do przodu pokazywać z kalendarza FRED
+FF_BACKOFF_MIN = 30 * 60      # najkrótsza przerwa po odmowie Forex Factory (sekundy)
 
 # zapadalności w kolejności na osi krzywej
 TENORS = ["1M", "2M", "3M", "4M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "20Y", "30Y"]
@@ -58,7 +67,7 @@ INSTRUMENTS = {
 }
 GROUPS = ["Indeksy", "Zmienność", "Waluty", "Surowce"]
 
-TTL_HOURS = {"yields": 3.0, "quotes": 0.25, "calendar": 1.0}
+TTL_HOURS = {"yields": 3.0, "quotes": 0.25, "calendar": 6.0}
 HISTORY_DAYS = 400
 log = logging.getLogger("xtb.markets")
 
@@ -136,6 +145,67 @@ def parse_calendar_json(payload) -> list[dict]:
     return out
 
 
+# Publikacje z kalendarza FRED, które pokazuję: wzorzec nazwy -> (tytuł, waga, godzina w Nowym Jorku).
+# FRED podaje tylko datę; godziny to stałe pory publikacji tych raportów (BLS, BEA, Census, Fed, UMich).
+FRED_RELEASES = [
+    (r"^Consumer Price Index$", "Inflacja CPI", "High", "08:30"),
+    (r"^Employment Situation$", "Raport z rynku pracy (NFP, stopa bezrobocia)", "High", "08:30"),
+    (r"^Personal Income and Outlays$", "Dochody i wydatki, deflator PCE", "High", "08:30"),
+    (r"^Gross Domestic Product$", "PKB", "High", "08:30"),
+    (r"Advance Monthly Sales for Retail", "Sprzedaż detaliczna", "High", "08:30"),
+    (r"^FOMC Press Release", "Decyzja Fed w sprawie stóp", "High", "14:00"),
+    (r"^Producer Price Index$", "Ceny producentów PPI", "Medium", "08:30"),
+    (r"Job Openings and Labor Turnover", "Wolne miejsca pracy (JOLTS)", "Medium", "10:00"),
+    (r"Unemployment Insurance Weekly Claims", "Nowe wnioski o zasiłek", "Medium", "08:30"),
+    (r"Surveys of Consumers", "Nastroje konsumentów UMich", "Medium", "10:00"),
+    (r"Durable Goods", "Zamówienia dóbr trwałych", "Medium", "08:30"),
+    (r"^Industrial Production and Capacity Utilization", "Produkcja przemysłowa", "Medium", "09:15"),
+    (r"^Employment Cost Index$", "Koszty zatrudnienia (ECI)", "Medium", "08:30"),
+    (r"ADP National Employment Report", "Zatrudnienie wg ADP", "Medium", "08:15"),
+    (r"^New Residential Construction$", "Rozpoczęte budowy domów i pozwolenia", "Low", "08:30"),
+    (r"^New Residential Sales$", "Sprzedaż nowych domów", "Low", "10:00"),
+    (r"International Trade in Goods and Services", "Bilans handlowy", "Low", "08:30"),
+    (r"^Productivity and Costs$", "Wydajność pracy i koszty", "Low", "08:30"),
+]
+
+
+def _ny_to_utc(day: str, hm: str) -> pd.Timestamp:
+    t = pd.Timestamp(f"{day} {hm}")
+    try:
+        return t.tz_localize("America/New_York").tz_convert("UTC")
+    except Exception:                       # brak bazy stref czasowych: przybliżenie EST
+        return (t + pd.Timedelta(hours=5)).tz_localize("UTC")
+
+
+def parse_fred_release_dates(payload) -> list[dict]:
+    """Odpowiedź FRED /fred/releases/dates -> wydarzenia (tylko publikacje z listy FRED_RELEASES)."""
+    out, seen = [], set()
+    for r in (payload or {}).get("release_dates") or []:
+        name, day = str(r.get("release_name") or ""), str(r.get("date") or "")
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
+            continue
+        for pat, title, impact, hm in FRED_RELEASES:
+            if re.search(pat, name, re.I):
+                if (day, title) not in seen:
+                    seen.add((day, title))
+                    out.append({"time": _ny_to_utc(day, hm).strftime("%Y-%m-%dT%H:%M:%SZ"), "title": title,
+                                "country": "USD", "impact": impact, "forecast": "", "previous": "", "actual": ""})
+                break
+    out.sort(key=lambda e: (e["time"], e["title"]))
+    return out
+
+
+def merge_calendars(ff: list[dict] | None, fred: list[dict] | None) -> list[dict]:
+    """Forex Factory ma prognozy, ale tylko na bieżący tydzień; FRED dokłada USA po końcu tego tygodnia."""
+    ff, fred = ff or [], fred or []
+    if not ff:
+        return list(fred)
+    last_ff = max(pd.Timestamp(e["time"]).tz_convert("UTC").normalize() for e in ff)
+    week_end = last_ff + pd.Timedelta(days=(5 - last_ff.weekday()) % 7)      # sobota tygodnia z kalendarza
+    extra = [e for e in fred if pd.Timestamp(e["time"]).tz_convert("UTC").normalize() > week_end]
+    return sorted(ff + extra, key=lambda e: (e["time"], e["country"], e["title"]))
+
+
 def _df_to_json(df: pd.DataFrame) -> str:
     return json.dumps({"dates": [d.strftime("%Y-%m-%d") for d in df.index], "columns": list(df.columns),
                        "values": [[None if v is None or not np.isfinite(v) else float(v) for v in row]
@@ -159,13 +229,35 @@ def _series_from_json(raw: str) -> pd.Series:
 # Pobieranie na żywo
 # --------------------------------------------------------------------------- #
 
-def _get(url: str, timeout: float = 20.0):
+class RateLimited(DataUnavailable):
+    """Serwis odmówił z powodu limitu zapytań (HTTP 429); retry_after - ile sekund odczekać."""
+
+    def __init__(self, msg: str, retry_after: float = 0.0):
+        super().__init__(msg)
+        self.retry_after = retry_after
+
+
+def _retry_after(value) -> float:
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        try:
+            return max(0.0, (pd.Timestamp(value).tz_convert("UTC") - pd.Timestamp.now(tz="UTC")).total_seconds())
+        except Exception:
+            return 0.0
+
+
+def _get(url: str, timeout: float = 20.0, secret: str | None = None):
+    """GET z czytelnym błędem; `secret` (np. klucz API w adresie) jest wycinany z komunikatów."""
     from data.providers import DataUnavailable, _http_get
     host = url.split("/")[2]
     try:
         r = _http_get(url, timeout=timeout)
     except Exception as exc:
-        raise DataUnavailable(f"{host}: {exc}") from exc
+        msg = str(exc).replace(secret, "***") if secret else str(exc)
+        raise DataUnavailable(f"{host}: {msg[:200]}") from None
+    if r.status_code == 429:
+        raise RateLimited(f"{host}: HTTP 429 (limit zapytań)", _retry_after(r.headers.get("Retry-After")))
     if r.status_code != 200:
         raise DataUnavailable(f"{host}: HTTP {r.status_code}")
     return r
@@ -220,32 +312,111 @@ def fetch_instrument(key: str, today: pd.Timestamp) -> tuple[pd.Series, str]:
     raise DataUnavailable("; ".join(errors))
 
 
-def fetch_calendar() -> list[dict]:
-    events, ok, errors = [], False, []
+def fetch_calendar_ff() -> list[dict]:
+    """Bieżący tydzień z Forex Factory. HTTP 429 przechodzi dalej jako RateLimited (z czasem przerwy)."""
+    events = []
     for url in CALENDAR_URLS:
+        r = _get(url, timeout=20)
         try:
-            r = _get(url, timeout=20)
-            try:
-                payload = r.json()
-            except ValueError as exc:
-                raise ValueError(f"odpowiedź nie jest JSON ({r.headers.get('content-type', '?')}): "
-                                 f"{r.text[:80]!r}") from exc
-            events += parse_calendar_json(payload)
-            ok = True
+            payload = r.json()
+        except ValueError as exc:
+            raise ValueError(f"odpowiedź nie jest JSON ({r.headers.get('content-type', '?')})") from exc
+        events += parse_calendar_json(payload)
+    if not events:
+        raise ValueError("pusty kalendarz")
+    return events
+
+
+def fetch_calendar_fred(today: pd.Timestamp, key: str) -> list[dict]:
+    """Oficjalne terminy publikacji z USA z FRED (Fed St. Louis). Wymaga darmowego klucza FRED_API_KEY."""
+    today = pd.Timestamp(today).normalize()
+    url = FRED_RELEASES_URL.format(key=key, start=f"{today:%Y-%m-%d}",
+                                   end=f"{today + pd.Timedelta(days=FRED_DAYS):%Y-%m-%d}")
+    events = parse_fred_release_dates(_get(url, timeout=20, secret=key).json())
+    if not events:
+        raise ValueError("FRED: brak terminów w najbliższych tygodniach")
+    return events
+
+
+# Wspólny, trwały magazyn (tabela w bazie kont - Postgres/Neon). Lokalny SQLite na darmowym Render znika przy
+# każdym uśpieniu, a źródła takie jak Forex Factory limitują zapytania - udany odczyt musi przetrwać restart.
+# Trzyma wyłącznie publiczne dane rynkowe. Interfejs: get(key) -> (value, updated_epoch) | None; set(key, value).
+_shared = None
+
+
+def set_shared_store(store) -> None:
+    global _shared
+    _shared = store
+
+
+def _shared_get(key: str, max_age_hours: float | None = None):
+    if _shared is None:
+        return None
+    try:
+        hit = _shared.get(key)
+    except Exception as exc:            # baza chwilowo niedostępna - lokalny cache wystarczy
+        log.warning("wspólny cache: %s", exc)
+        return None
+    if not hit:
+        return None
+    value, updated = hit
+    if max_age_hours is not None and time.time() - float(updated) > max_age_hours * 3600:
+        return None
+    return value
+
+
+def _shared_set(key: str, value: str) -> None:
+    if _shared is not None:
+        try:
+            _shared.set(key, value)
         except Exception as exc:
-            errors.append(f"{url.rsplit('/', 1)[-1]}: {exc}")
+            log.warning("wspólny cache: %s", exc)
+
+
+def live_calendar(cache, today, warnings: list[str]) -> dict:
+    """Kalendarz: świeża kopia (lokalna albo wspólna) -> Forex Factory (z przerwą po 429) + FRED -> stara kopia."""
+    key, ttl = "mk:calendar3", TTL_HOURS["calendar"]
+    hit = cache.get_kv(key, max_age_hours=ttl) or _shared_get(key, ttl)
+    if hit:
+        return json.loads(hit)
+    now, errors = time.time(), []
+    pause_raw = cache.get_kv("mk:ff:pause") or _shared_get("mk:ff:pause")
+    pause_until = float(pause_raw or 0)
+    ff = fred = None
+    if now >= pause_until:
+        try:
+            ff = fetch_calendar_ff()
+        except Exception as exc:
+            wait = max(FF_BACKOFF_MIN, getattr(exc, "retry_after", 0.0)) if isinstance(exc, RateLimited) else 15 * 60
+            pause_until = now + wait
+            cache.set_kv("mk:ff:pause", str(pause_until))
+            _shared_set("mk:ff:pause", str(pause_until))
+            errors.append(f"Forex Factory: {exc}")
+    else:
+        errors.append(f"Forex Factory: przerwa po limicie zapytań do {pd.Timestamp(pause_until, unit='s', tz='UTC'):%H:%M} UTC")
+    fred_key = os.environ.get("FRED_API_KEY", "").strip()
+    if fred_key:
+        try:
+            fred = fetch_calendar_fred(today, fred_key)
+        except Exception as exc:
+            errors.append(f"FRED: {str(exc).replace(fred_key, '***')}")
     for e in errors:
         log.warning("kalendarz makro: %s", e)
-    if not ok:
-        from data.providers import DataUnavailable
-        raise DataUnavailable("; ".join(errors) or "brak odpowiedzi")
-    seen, out = set(), []
-    for e in sorted(events, key=lambda e: (e["time"], e["country"], e["title"])):
-        k = (e["time"], e["country"], e["title"])
-        if k not in seen:
-            seen.add(k)
-            out.append(e)
-    return out
+    if ff or fred:
+        out = {"events": merge_calendars(ff, fred),
+               "source": " + ".join(n for n, v in (("Forex Factory", ff), ("FRED", fred)) if v),
+               "forecasts": bool(ff), "fetched": now}
+        raw = json.dumps(out)
+        cache.set_kv(key, raw)
+        _shared_set(key, raw)
+        return out
+    old = cache.get_kv(key) or _shared_get(key)
+    if old:
+        warnings.append("Kalendarz makro: nie udało się odświeżyć (" + "; ".join(errors) + "); pokazuję ostatnią zapisaną wersję.")
+        return json.loads(old)
+    warnings.append("Kalendarz makro: brak danych (" + "; ".join(errors) + ").")
+    return {"events": None, "source": None, "pause_until": pause_until if pause_until > now else None,
+            "fred_enabled": bool(fred_key), "errors": errors}
 
 
 def live_markets(cache, today=None, workers: int = 4) -> dict:
@@ -253,16 +424,19 @@ def live_markets(cache, today=None, workers: int = 4) -> dict:
     today = pd.Timestamp(today or pd.Timestamp.today()).normalize()
     warnings: list[str] = []
 
-    def cached(key, ttl, fetch, dump, load, label):
-        hit = cache.get_kv(key, max_age_hours=ttl)
+    def cached(key, ttl, fetch, dump, load, label, shared=False):
+        hit = cache.get_kv(key, max_age_hours=ttl) or (_shared_get(key, ttl) if shared else None)
         if hit:
             return load(hit)
         try:
             val = fetch()
-            cache.set_kv(key, dump(val))
+            raw = dump(val)
+            cache.set_kv(key, raw)
+            if shared:
+                _shared_set(key, raw)
             return val
         except Exception as exc:
-            old = cache.get_kv(key)
+            old = cache.get_kv(key) or (_shared_get(key) if shared else None)
             if old:
                 warnings.append(f"{label}: nie udało się odświeżyć ({exc}); pokazuję ostatnią zapisaną wersję.")
                 return load(old)
@@ -284,7 +458,7 @@ def live_markets(cache, today=None, workers: int = 4) -> dict:
     y = cached("mk:yields", TTL_HOURS["yields"], yields_fetch,
                lambda v: json.dumps({"df": _df_to_json(v["df"]), "source": v["source"]}),
                lambda raw: (lambda d: {"df": _df_from_json(d["df"]), "source": d["source"]})(json.loads(raw)),
-               "Rentowności")
+               "Rentowności", shared=True)
 
     def one(key):
         name = INSTRUMENTS[key][0]
@@ -302,12 +476,13 @@ def live_markets(cache, today=None, workers: int = 4) -> dict:
     prices = {k: v[0] for k, v in res if v is not None and len(v[0].dropna())}
     sources = sorted({v[1] for _, v in res if v is not None})
 
-    cal = cached("mk:calendar", TTL_HOURS["calendar"], fetch_calendar, json.dumps, json.loads, "Kalendarz makro")
+    cal = live_calendar(cache, today, warnings)
     for w in warnings:
         log.warning(w)
     return {"yields": y["df"] if y else None, "yields_source": y["source"] if y else None,
             "prices": prices, "prices_source": ", ".join(sources) or None,
-            "calendar": cal, "calendar_source": "Forex Factory" if cal is not None else None,
+            "calendar": cal.get("events"), "calendar_source": cal.get("source"),
+            "calendar_info": {k: cal.get(k) for k in ("forecasts", "fetched", "pause_until", "fred_enabled")},
             "now": pd.Timestamp.now(tz="UTC"), "warnings": warnings, "is_synthetic": False}
 
 
