@@ -834,3 +834,113 @@ def test_portfolio_stuck_on_demo_by_earlier_failure_comes_back(browser, base_url
     assert "dane przykładowe" in pg2.inner_text("#bar-meta")
     assert not pg2.errors, pg2.errors
     ctx2.close()
+
+
+# --------------------------------------------------------------------------- wykres z przybliżaniem
+
+def _first_line(pg):
+    return pg.locator("figure.chart:has(.chart-tools)").first
+
+
+def _range_text(fig):
+    return fig.locator(".window-sum .window-dates").inner_text() if fig.locator(".window-sum .window-dates").count() else ""
+
+
+def test_line_chart_zoom_presets_navigator_and_linked_drawdown(page):
+    fig = _first_line(page)
+    tools = fig.locator(".chart-tools")
+    assert tools.locator("button", has_text="Całość").get_attribute("aria-pressed") == "true"
+    # zakres 3M: okno się zawęża, pod wykresem daty i zmiana w oknie, obsunięcie przybliża się razem
+    tools.locator("button", has_text="3M").click()
+    page.wait_for_timeout(100)
+    assert tools.locator("button", has_text="3M").get_attribute("aria-pressed") == "true"
+    dates = _range_text(fig)
+    assert " – " in dates
+    assert "Portfel" in fig.locator(".window-sum").inner_text()
+    dd = page.locator("figure.chart", has_text="Obsunięcie od szczytu")
+    assert _range_text(dd) == dates
+    shot(page, "zoom-3m")
+    # przybliż przyciskiem +, potem przesuń okno na mini-wykresie w lewo
+    tools.locator("button.zoom[aria-label=Przybliż]").click()
+    page.wait_for_timeout(100)
+    narrower = _range_text(fig)
+    assert narrower != dates
+    nav = fig.locator(".chart-nav svg")
+    nb = nav.bounding_box()
+    win = fig.locator(".nav-window").bounding_box()
+    cx, cy = win["x"] + win["width"] / 2, nb["y"] + nb["height"] / 2
+    page.mouse.move(cx, cy)
+    page.mouse.down()
+    page.mouse.move(cx - nb["width"] * 0.4, cy, steps=6)
+    page.mouse.up()
+    page.wait_for_timeout(100)
+    moved = _range_text(fig)
+    assert moved != narrower and moved.split(" – ")[0] < narrower.split(" – ")[0] or moved != narrower
+    # dwuklik wraca do całości
+    fig.locator(".chart-body svg").dblclick()
+    page.wait_for_timeout(100)
+    assert tools.locator("button", has_text="Całość").get_attribute("aria-pressed") == "true"
+    assert _range_text(dd) == ""
+    assert not page.errors, page.errors
+
+
+def test_line_chart_pinch_and_mouse_brush_zoom(page):
+    fig = _first_line(page)
+    body = fig.locator(".chart-body")
+    b = body.bounding_box()
+    y = b["y"] + b["height"] / 2
+    # dwa palce rozsuwane od środka = przybliżenie
+    page.evaluate("""([sel, y, x1, x2, w]) => {
+        const node = document.querySelector(sel);
+        const ev = (type, id, x) => node.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch',
+            clientX: x, clientY: y, bubbles: true, cancelable: true, pressure: 0.5, isPrimary: id === 1 }));
+        ev('pointerdown', 1, x1); ev('pointerdown', 2, x2);
+        for (let k = 1; k <= 5; k++) { ev('pointermove', 1, x1 - k * w); ev('pointermove', 2, x2 + k * w); }
+        ev('pointerup', 1, x1 - 5 * w); ev('pointerup', 2, x2 + 5 * w);
+    }""", ["figure.chart:has(.chart-tools) .chart-body", y, b["x"] + b["width"] * 0.45, b["x"] + b["width"] * 0.55, b["width"] * 0.06])
+    page.wait_for_timeout(120)
+    pinched = _range_text(fig)
+    assert " – " in pinched
+    assert fig.locator(".as-period").is_visible()
+    fig.locator(".chart-tools button", has_text="Całość").click()
+    page.wait_for_timeout(100)
+    # przeciągnięcie myszą zaznacza fragment i go przybliża
+    page.mouse.move(b["x"] + b["width"] * 0.3, y)
+    page.mouse.down()
+    page.mouse.move(b["x"] + b["width"] * 0.6, y, steps=8)
+    page.mouse.up()
+    page.wait_for_timeout(120)
+    assert " – " in _range_text(fig)
+    assert not page.errors, page.errors
+
+
+def test_zoomed_range_becomes_analysis_period(page):
+    fig = _first_line(page)
+    fig.locator(".chart-tools button", has_text="6M").click()
+    page.wait_for_timeout(100)
+    start = _range_text(fig).split(" – ")[0]
+    fig.locator(".as-period").click()
+    page.wait_for_function(f"document.querySelector('#viewbar .range')?.textContent.includes('{start[:5]}')"
+                           f" || document.querySelector('#bar-meta')?.textContent.includes('{start[:5]}')", timeout=90000)
+    wait_ready(page)
+    # po przeliczeniu cały wykres to już wybrany okres
+    assert _first_line(page).locator(".chart-tools button", has_text="Całość").get_attribute("aria-pressed") == "true"
+    page.evaluate("async () => { const api = await import('/js/api.js'); await api.setView({since: '', until: ''}); }")
+    assert not page.errors, page.errors
+
+
+def test_benchmark_curves_rebase_to_window_start(page, base_url):
+    page.goto(base_url + "/#/perf/perf-benchmarks")
+    wait_ready(page)
+    fig = _first_line(page)
+    fig.locator(".chart-tools button", has_text="1R").click()
+    page.wait_for_timeout(120)
+    # pierwszy punkt widocznego okna = 100 dla każdej serii
+    box = fig.locator(".chart-body svg").bounding_box()
+    page.mouse.move(box["x"] + 21, box["y"] + box["height"] / 2)
+    page.wait_for_timeout(60)
+    vals = fig.locator(".legend b").all_inner_texts()
+    assert vals and all(v in ("100", "–") for v in vals), vals
+    assert "%" in fig.locator(".window-sum").inner_text()
+    shot(page, "zoom-bench")
+    assert not page.errors, page.errors

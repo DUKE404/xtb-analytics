@@ -209,8 +209,13 @@ def table(df: pd.DataFrame, columns: list[tuple], title: str | None = None, capt
 # --------------------------------------------------------------------------- #
 
 def line(df: pd.DataFrame, fmt: str = "num", digits: int | None = None, colors: dict | None = None,
-         area: bool = False, zero: bool = False, max_points: int = 400) -> dict:
-    """Linie na jednej osi. Długie serie są przerzedzane (ostatni punkt zawsze zostaje)."""
+         area: bool = False, zero: bool = False, max_points: int = 1500, rebase: bool = False,
+         delta: str | None = None, group: str | None = None, zoom: bool = True) -> dict:
+    """Linie na jednej osi. Długie serie są przerzedzane (ostatni punkt zawsze zostaje).
+
+    Wykres w telefonie można przybliżać (zakresy, suwak, dwa palce). `rebase`: serie liczone od 100 na początku
+    widocznego okna (porównanie z indeksami). `delta`: pod wykresem zmiana w widocznym oknie - "abs" (kwota)
+    albo "rel" (procent). `group`: wykresy jednego ekranu z tą samą grupą przybliżają się razem."""
     if len(df) > max_points:
         step = int(math.ceil(len(df) / max_points))
         keep = sorted(set(range(0, len(df), step)) | {len(df) - 1})
@@ -218,8 +223,15 @@ def line(df: pd.DataFrame, fmt: str = "num", digits: int | None = None, colors: 
     colors = SERIES_COLORS | (colors or {})
     series = [{"name": str(c), "values": _round(df[c].values), "color": _color(colors, str(c), i % 8)}
               for i, c in enumerate(df.columns)]
-    return {"type": "line", "x": _dates(df.index), "series": series, "fmt": fmt, "digits": digits,
-            "area": area, "zero": zero}
+    out = {"type": "line", "x": _dates(df.index), "series": series, "fmt": fmt, "digits": digits,
+           "area": area, "zero": zero, "zoom": zoom}
+    if rebase:
+        out["rebase"] = True
+    if delta:
+        out["delta"] = delta
+    if group:
+        out["group"] = group
+    return out
 
 
 def hbar(series: pd.Series, fmt: str = "num", digits: int | None = None, signed: bool = False,

@@ -35,7 +35,7 @@ def overview(ctx, p) -> dict:
     dd = perf.drawdown_series(pf.returns).to_frame("Obsunięcie")
     blocks = [
         B.statement(lead, sub),
-        B.chart(B.line(eq, "pln", 0), "Wartość portfela a wpłacony kapitał"),
+        B.chart(B.line(eq, "pln", 0, delta="abs", group="overview"), "Wartość portfela a wpłacony kapitał"),
         B.metrics([
             B.metric("Wartość portfela", equity, "pln"),
             B.metric("Wynik całkowity", pnl, "pln", sign=True, note=B.f_pct(s["total_return"], 1, sign=True) + " stopa zwrotu (TWR)"),
@@ -45,7 +45,7 @@ def overview(ctx, p) -> dict:
             B.metric("VaR 95% na 1 dzień", var95, "pln", tip="VaR",
                      note=(B.f_pct(var95 / equity, 2) + " kapitału") if var95 == var95 else None),
         ]),
-        B.chart(B.line(dd, "pct", 1, colors={"Obsunięcie": "neg"}, area=True, zero=True), "Obsunięcie od szczytu",
+        B.chart(B.line(dd, "pct", 1, colors={"Obsunięcie": "neg"}, area=True, zero=True, group="overview"), "Obsunięcie od szczytu",
                 "Liczone na stopie zwrotu, więc wpłaty go nie maskują."),
     ]
 

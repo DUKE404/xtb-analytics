@@ -26,7 +26,7 @@ def benchmarks(ctx, p) -> dict:
     for k in full.columns:
         yr[ctx.bench_label(k)] = perf.yearly_returns(full[k])
     blocks = [
-        B.chart(B.line(curves, "num", 0), "Portfel a indeksy, start okresu = 100",
+        B.chart(B.line(curves, "num", 0, rebase=True, delta="rel"), "Portfel a indeksy, start widocznego okresu = 100",
                 f"Indeksy w innej walucie przeliczone na {_cur_name(ctx)} po kursach NBP, więc zawierają efekt walutowy. "
                 "WIG20, S&P 500 i Nasdaq 100 to indeksy cenowe (bez dywidend); MSCI World jest liczony ceną ETF-u."),
         B.table(cmp, [("name", "Seria", "text"), ("Zwrot", "Zwrot", "pct", 1), ("CAGR", "CAGR", "pct", 1),

@@ -52,37 +52,190 @@ function responsive(host, draw) {
 
 // --------------------------------------------------------------------------- linie / obszar
 
+// wykresy z tą samą grupą (np. wartość portfela i obsunięcie na Przeglądzie) przybliżają się razem
+const groups = new Map();
+
+function joinGroup(name, wrap, apply) {
+  if (!name) return () => {};
+  if (!groups.has(name)) groups.set(name, new Set());
+  const set = groups.get(name);
+  const member = { wrap, apply };
+  set.add(member);
+  return (from, to) => {
+    for (const m of [...set]) {
+      if (m === member) continue;
+      if (!m.wrap.isConnected) { set.delete(m); continue; }   // wykres z poprzedniego ekranu
+      m.apply(from, to);
+    }
+  };
+}
+
+/** Pierwszy indeks z datą >= iso (daty rosnąco, RRRR-MM-DD). */
+function indexFrom(xs, iso) {
+  let lo = 0, hi = xs.length - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (xs[mid] < iso) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+
+/** Ostatni indeks z datą <= iso. */
+function indexTo(xs, iso) {
+  let lo = 0, hi = xs.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (xs[mid] > iso) hi = mid - 1; else lo = mid; }
+  return lo;
+}
+
+function isoShift(iso, months) {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCMonth(d.getUTCMonth() - months);
+  return d.toISOString().slice(0, 10);
+}
+
+const PRESETS = [
+  { id: "1m", label: "1M", from: (end) => isoShift(end, 1) },
+  { id: "3m", label: "3M", from: (end) => isoShift(end, 3) },
+  { id: "6m", label: "6M", from: (end) => isoShift(end, 6) },
+  { id: "ytd", label: "YTD", from: (end) => `${end.slice(0, 4)}-01-01` },
+  { id: "1y", label: "1R", from: (end) => isoShift(end, 12) },
+  { id: "3y", label: "3L", from: (end) => isoShift(end, 36) },
+];
+
+const MIN_SPAN = 5;     // najmniejsze okno: tyle punktów
+
+/** Wykres liniowy z przybliżaniem: przyciski zakresu, +/−, mini-wykres z suwakiem okna, uszczypnięcie
+ *  dwoma palcami, Ctrl/⌘ + kółko lub gest na gładziku, przeciągnięcie myszą = zaznacz i przybliż,
+ *  dwuklik = cały okres. `rebase`: serie liczone od 100 na początku widocznego okna. */
 function lineChart(spec) {
-  const wrap = el("div");
+  const wrap = el("div", { class: "line-chart" });
   const many = spec.series.length > 1;
   const lg = legend(spec.series);
   const readout = el("p", { class: "readout" });
+  const summary = el("p", { class: "window-sum" });
   const body = el("div", { class: "chart-body" });
-  wrap.append(lg.ul, readout, body);
-  if (!many) lg.ul.hidden = true;
-
   const n = spec.x.length;
-  const last = (s) => { for (let i = s.values.length - 1; i >= 0; i--) if (isNum(s.values[i])) return i; return -1; };
+  const zoomable = spec.zoom !== false && n >= 20;
+  let lo = 0, hi = n - 1;            // widoczne okno (indeksy włącznie)
+  let hover = null;
+
+  // wartości w oknie: przy `rebase` każda seria startuje od 100 w pierwszym punkcie okna
+  let view = spec.series.map((s) => s.values);
+  const recompute = () => {
+    if (!spec.rebase) { view = spec.series.map((s) => s.values); return; }
+    view = spec.series.map((s) => {
+      let base = null;
+      for (let i = lo; i <= hi; i++) if (isNum(s.values[i]) && s.values[i] !== 0) { base = s.values[i]; break; }
+      return s.values.map((v) => (isNum(v) && base ? (v / base) * 100 : null));
+    });
+  };
+  const lastIn = (vals) => { for (let i = hi; i >= lo; i--) if (isNum(vals[i])) return i; return -1; };
+  const firstIn = (vals) => { for (let i = lo; i <= hi; i++) if (isNum(vals[i])) return i; return -1; };
+
   const show = (i) => {
-    const date = i === null ? fmtDate(spec.x[n - 1]) : fmtDate(spec.x[i]);
-    spec.series.forEach((s, k) => {
-      const j = i === null ? last(s) : i;
-      lg.values[k].textContent = j >= 0 ? fmt(s.values[j], spec.fmt, spec.digits) : "–";
+    const date = fmtDate(spec.x[i === null ? hi : i]);
+    view.forEach((vals, k) => {
+      const j = i === null ? lastIn(vals) : i;
+      lg.values[k].textContent = j >= 0 ? fmt(vals[j], spec.fmt, spec.digits) : "–";
     });
     readout.replaceChildren(...(many ? [date] : [date + "  ", el("b", {}, lg.values[0].textContent)]));
   };
-  show(null);
 
-  responsive(body, (W) => {
+  const drawSummary = () => {
+    const zoomed = lo > 0 || hi < n - 1;
+    const parts = [];
+    if (spec.delta && (zoomed || spec.rebase)) {
+      view.forEach((vals, k) => {
+        const a = firstIn(vals), b = lastIn(vals);
+        if (a < 0 || b < 0 || a === b) return;
+        const d = spec.delta === "rel" ? vals[b] / vals[a] - 1 : vals[b] - vals[a];
+        parts.push(el("span", {}, `${spec.series[k].name} `, el("b", { class: d >= 0 ? "pos" : "neg" },
+          fmt(d, spec.delta === "rel" ? "pct" : spec.fmt, spec.delta === "rel" ? 1 : spec.digits, true))));
+      });
+    }
+    summary.replaceChildren(...(zoomed ? [el("span", { class: "window-dates" }, `${fmtDate(spec.x[lo])} – ${fmtDate(spec.x[hi])}`)] : []), ...parts);
+    summary.hidden = !summary.childNodes.length;
+  };
+
+  // ---- pasek narzędzi
+  const tools = el("div", { class: "chart-tools", role: "toolbar", "aria-label": "Zakres wykresu" });
+  const presets = PRESETS.map((p) => ({ ...p, start: indexFrom(spec.x, p.from(spec.x[n - 1])) }))
+    .filter((p) => p.start > 0 && n - 1 - p.start >= MIN_SPAN - 1);
+  const chips = presets.map((p) => {
+    const b = el("button", { type: "button", "aria-pressed": "false" }, p.label);
+    b.addEventListener("click", () => setRange(p.start, n - 1, true));
+    return [p, b];
+  });
+  const all = el("button", { type: "button", "aria-pressed": "true" }, "Całość");
+  all.addEventListener("click", () => setRange(0, n - 1, true));
+  const zoomOut = el("button", { type: "button", class: "zoom", "aria-label": "Oddal" }, "−");
+  const zoomIn = el("button", { type: "button", class: "zoom", "aria-label": "Przybliż" }, "+");
+  zoomOut.addEventListener("click", () => zoomBy(1.6));
+  zoomIn.addEventListener("click", () => zoomBy(1 / 1.6));
+  const asPeriod = el("button", { type: "button", class: "as-period", hidden: true }, "Ustaw jako okres analiz");
+  asPeriod.addEventListener("click", () => wrap.dispatchEvent(new CustomEvent("chart-period", {
+    bubbles: true, detail: { since: lo > 0 ? spec.x[lo] : "", until: hi < n - 1 ? spec.x[hi] : "" },
+  })));
+  tools.append(...chips.map(([, b]) => b), all, el("span", { class: "spacer" }), zoomOut, zoomIn);
+
+  const broadcast = joinGroup(spec.group, wrap, (from, to) => {
+    const a = indexFrom(spec.x, from), b = indexTo(spec.x, to);
+    if (b - a >= MIN_SPAN - 1) setRange(a, b, false);
+    else setRange(0, n - 1, false);
+  });
+
+  function syncTools() {
+    const zoomed = lo > 0 || hi < n - 1;
+    chips.forEach(([p, b]) => b.setAttribute("aria-pressed", String(hi === n - 1 && lo === p.start)));
+    all.setAttribute("aria-pressed", String(!zoomed));
+    zoomOut.disabled = !zoomed;
+    zoomIn.disabled = hi - lo + 1 <= MIN_SPAN;
+    asPeriod.hidden = !zoomed || spec.period === false;
+  }
+
+  let frame = 0;
+  function render() {
+    if (frame) return;
+    frame = requestAnimationFrame(() => { frame = 0; draw(); });
+  }
+
+  function setRange(a, b, user) {
+    a = Math.max(0, Math.round(a)); b = Math.min(n - 1, Math.round(b));
+    if (b - a < MIN_SPAN - 1) {
+      const mid = (a + b) / 2;
+      a = Math.max(0, Math.round(mid - (MIN_SPAN - 1) / 2)); b = Math.min(n - 1, a + MIN_SPAN - 1); a = Math.max(0, b - MIN_SPAN + 1);
+    }
+    if (a === lo && b === hi) return;
+    lo = a; hi = b;
+    recompute();
+    syncTools();
+    drawSummary();
+    show(null);
+    render();
+    if (user) broadcast(spec.x[lo], spec.x[hi]);
+  }
+
+  function zoomBy(factor, center = (lo + hi) / 2) {
+    const span = Math.max(MIN_SPAN - 1, Math.min(n - 1, (hi - lo) * factor));
+    const t = (center - lo) / Math.max(1, hi - lo);
+    let a = center - span * t;
+    a = Math.max(0, Math.min(n - 1 - span, a));
+    setRange(a, a + span, true);
+  }
+
+  // ---- rysowanie
+  let geo = null;     // bieżąca geometria do obsługi gestów
+  function draw() {
+    const W = widthOf(body);
     const H = Math.round(Math.min(260, Math.max(190, W * 0.52)));
     const top = 18, bottom = 24, plotH = H - top - bottom;
-    const all = spec.series.flatMap((s) => s.values.filter(isNum));
-    let min = Math.min(...all), max = Math.max(...all);
+    const vis = view.flatMap((vals) => vals.slice(lo, hi + 1).filter(isNum));
+    let min = vis.length ? Math.min(...vis) : 0, max = vis.length ? Math.max(...vis) : 1;
     if (spec.zero) { min = Math.min(min, 0); max = Math.max(max, 0); }
     const t = niceTicks(min, max, 3);
-    const x = (i) => PAD + (i / Math.max(1, n - 1)) * (W - 2 * PAD);
+    const span = Math.max(1, hi - lo);
+    const x = (i) => PAD + ((i - lo) / span) * (W - 2 * PAD);
     const y = (v) => top + (1 - (v - t.lo) / (t.hi - t.lo)) * plotH;
     const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": spec.series.map((s) => s.name).join(", ") });
+    const clipId = `clip${Math.random().toString(36).slice(2, 9)}`;
+    root.append(svg("defs", {}, svg("clipPath", { id: clipId }, svg("rect", { x: 0, y: 0, width: W, height: H }))));
 
     for (const v of t.ticks) {
       root.append(svg("line", { class: v === 0 ? "zero" : "grid", x1: 0, x2: W, y1: y(v), y2: y(v) }));
@@ -90,50 +243,218 @@ function lineChart(spec) {
       label.textContent = fmtAxis(v, spec.fmt);
       root.append(label);
     }
-    for (const [i, anchor] of [[0, "start"], [Math.floor((n - 1) / 2), "middle"], [n - 1, "end"]]) {
+    const days = (Date.parse(spec.x[hi]) - Date.parse(spec.x[lo])) / 864e5;
+    for (const [i, anchor] of [[lo, "start"], [Math.round((lo + hi) / 2), "middle"], [hi, "end"]]) {
       const label = svg("text", { class: "axis-text", x: x(i), y: H - 6, "text-anchor": anchor });
-      label.textContent = fmtDate(spec.x[i], "axis");
+      label.textContent = days < 120 ? fmtDate(spec.x[i]).slice(0, 5) : fmtDate(spec.x[i], "axis");
       root.append(label);
     }
-    const half = (W - 2 * PAD) / Math.max(1, n - 1) / 2;
+    const plot = svg("g", { "clip-path": `url(#${clipId})` });
+    const half = (W - 2 * PAD) / span / 2;
     for (const [a, b] of spec.spans || []) {       // zacieniowane okresy (np. nerwowy rynek)
-      root.append(svg("rect", { x: x(a) - half, y: top, width: x(b) - x(a) + 2 * half, height: plotH, fill: "var(--ink)", "fill-opacity": 0.09 }));
+      if (b < lo || a > hi) continue;
+      plot.append(svg("rect", { x: x(a) - half, y: top, width: x(b) - x(a) + 2 * half, height: plotH, fill: "var(--ink)", "fill-opacity": 0.09 }));
     }
-    spec.series.forEach((s, k) => {
+    const a0 = Math.max(0, lo - 1), b0 = Math.min(n - 1, hi + 1);   // jeden punkt zapasu: linia dochodzi do krawędzi
+    view.forEach((vals, k) => {
+      const s = spec.series[k];
       let d = "", pen = false, first = null, lastI = null;
-      s.values.forEach((v, i) => {
-        if (!isNum(v)) { pen = false; return; }
+      for (let i = a0; i <= b0; i++) {
+        const v = vals[i];
+        if (!isNum(v)) { pen = false; continue; }
         d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
         pen = true;
         if (first === null) first = i;
         lastI = i;
-      });
+      }
       if (spec.area && k === 0 && first !== null) {
         const base = y(Math.max(t.lo, Math.min(t.hi, 0)));
-        root.append(svg("path", { d: `${d}L${x(lastI).toFixed(1)},${base}L${x(first).toFixed(1)},${base}Z`, fill: color(s.color), "fill-opacity": 0.12 }));
+        plot.append(svg("path", { d: `${d}L${x(lastI).toFixed(1)},${base}L${x(first).toFixed(1)},${base}Z`, fill: color(s.color), "fill-opacity": 0.12 }));
       }
-      root.append(svg("path", { d, fill: "none", stroke: color(s.color), "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+      plot.append(svg("path", { d, fill: "none", stroke: color(s.color), "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
     });
+    root.append(plot);
 
     const cross = svg("line", { class: "cross", y1: top, y2: top + plotH, visibility: "hidden" });
     const dots = spec.series.map((s) => svg("circle", { r: 4, fill: color(s.color), stroke: "var(--page)", "stroke-width": 2, visibility: "hidden" }));
-    root.append(cross, ...dots);
-    const move = (evt) => {
-      const i = Math.max(0, Math.min(n - 1, Math.round(((pointerX(evt, root, W) - PAD) / (W - 2 * PAD)) * (n - 1))));
+    const brush = svg("rect", { class: "brush", y: top, height: plotH, x: 0, width: 0, visibility: "hidden" });
+    root.append(brush, cross, ...dots);
+    geo = { root, W, x, index: (evt) => lo + ((pointerX(evt, root, W) - PAD) / (W - 2 * PAD)) * span };
+    const mark = (i) => {
       cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
-      spec.series.forEach((s, k) => {
-        if (isNum(s.values[i])) { dots[k].setAttribute("cx", x(i)); dots[k].setAttribute("cy", y(s.values[i])); dots[k].setAttribute("visibility", "visible"); }
+      view.forEach((vals, k) => {
+        if (isNum(vals[i])) { dots[k].setAttribute("cx", x(i)); dots[k].setAttribute("cy", y(vals[i])); dots[k].setAttribute("visibility", "visible"); }
         else dots[k].setAttribute("visibility", "hidden");
       });
       show(i);
     };
-    const leave = () => { cross.setAttribute("visibility", "hidden"); dots.forEach((c) => c.setAttribute("visibility", "hidden")); show(null); };
-    root.addEventListener("pointerdown", move);
-    root.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse" || e.pressure > 0) move(e); });
-    root.addEventListener("pointerleave", leave);
-    root.addEventListener("pointercancel", leave);
-    return root;
+    geo.mark = mark;
+    geo.unmark = () => { cross.setAttribute("visibility", "hidden"); dots.forEach((c) => c.setAttribute("visibility", "hidden")); show(null); };
+    geo.brush = (a, b) => {
+      if (a === null) { brush.setAttribute("visibility", "hidden"); return; }
+      const xa = Math.min(x(a), x(b)), xb = Math.max(x(a), x(b));
+      brush.setAttribute("x", xa); brush.setAttribute("width", xb - xa); brush.setAttribute("visibility", "visible");
+    };
+    if (hover !== null && hover >= lo && hover <= hi) mark(hover);
+    body.replaceChildren(root);
+    if (zoomable) drawNav(W);
+  }
+
+  // ---- mini-wykres całego okresu z oknem do przesuwania
+  const nav = el("div", { class: "chart-nav" });
+  let navGeo = null;
+  function drawNav(W) {
+    const H = 40, top = 4, plotH = H - 2 * top;
+    const vals = spec.series[0].values;
+    const nums = vals.filter(isNum);
+    if (!nums.length) return;
+    let min = Math.min(...nums), max = Math.max(...nums);
+    if (max === min) max = min + 1;
+    const x = (i) => PAD + (i / Math.max(1, n - 1)) * (W - 2 * PAD);
+    const y = (v) => top + (1 - (v - min) / (max - min)) * plotH;
+    let d = "", pen = false;
+    vals.forEach((v, i) => { if (!isNum(v)) { pen = false; return; } d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`; pen = true; });
+    const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, "aria-hidden": "true" },
+      svg("path", { d, fill: "none", stroke: color(spec.series[0].color), "stroke-width": 1.2, "stroke-opacity": 0.7 }),
+      svg("rect", { class: "nav-shade", x: 0, y: 0, width: Math.max(0, x(lo)), height: H }),
+      svg("rect", { class: "nav-shade", x: x(hi), y: 0, width: Math.max(0, W - x(hi)), height: H }),
+      svg("rect", { class: "nav-window", x: x(lo), y: 0.5, width: Math.max(2, x(hi) - x(lo)), height: H - 1, rx: 3 }),
+      svg("rect", { class: "nav-handle", x: x(lo) - 3, y: H / 2 - 9, width: 6, height: 18, rx: 2 }),
+      svg("rect", { class: "nav-handle", x: x(hi) - 3, y: H / 2 - 9, width: 6, height: 18, rx: 2 }));
+    navGeo = { root, W, x, at: (evt) => ((pointerX(evt, root, W) - PAD) / (W - 2 * PAD)) * (n - 1) };
+    nav.replaceChildren(root);
+  }
+
+  // przeciąganie na mini-wykresie: brzeg okna zmienia zakres, środek przesuwa, stuknięcie obok centruje okno
+  let navDrag = null;
+  nav.addEventListener("pointerdown", (evt) => {
+    if (!navGeo) return;
+    evt.preventDefault();
+    nav.setPointerCapture?.(evt.pointerId);
+    const px = pointerX(evt, navGeo.root, navGeo.W);
+    const grab = evt.pointerType === "mouse" ? 8 : 16;
+    const xl = navGeo.x(lo), xr = navGeo.x(hi);
+    let mode;
+    if (Math.abs(px - xl) <= grab && Math.abs(px - xl) <= Math.abs(px - xr)) mode = "lo";
+    else if (Math.abs(px - xr) <= grab) mode = "hi";
+    else if (px > xl && px < xr) mode = "pan";
+    else {
+      const w = hi - lo, c = navGeo.at(evt);
+      const a = Math.max(0, Math.min(n - 1 - w, c - w / 2));
+      setRange(a, a + w, true);
+      mode = "pan";
+    }
+    navDrag = { mode, start: navGeo.at(evt), lo, hi };
   });
+  nav.addEventListener("pointermove", (evt) => {
+    if (!navDrag || !navGeo) return;
+    const d = navGeo.at(evt) - navDrag.start;
+    if (navDrag.mode === "lo") setRange(Math.min(navDrag.lo + d, hi - MIN_SPAN + 1), hi, true);
+    else if (navDrag.mode === "hi") setRange(lo, Math.max(navDrag.hi + d, lo + MIN_SPAN - 1), true);
+    else {
+      const w = navDrag.hi - navDrag.lo;
+      const a = Math.max(0, Math.min(n - 1 - w, navDrag.lo + d));
+      setRange(a, a + w, true);
+    }
+  });
+  const endNav = () => { navDrag = null; };
+  nav.addEventListener("pointerup", endNav);
+  nav.addEventListener("pointercancel", endNav);
+
+  // ---- gesty na samym wykresie
+  const touches = new Map();
+  let pinch = null, drag = null;
+  const clampI = (v) => Math.max(lo, Math.min(hi, Math.round(v)));
+  body.addEventListener("pointerdown", (evt) => {
+    if (!geo) return;
+    touches.set(evt.pointerId, evt);
+    if (zoomable && touches.size === 2) {
+      // dwa palce: przybliżanie i przesuwanie; odczyt pod palcem się chowa
+      const [p1, p2] = [...touches.values()];
+      pinch = { d: Math.abs(p1.clientX - p2.clientX) || 1, mid: (geo.index(p1) + geo.index(p2)) / 2, lo, hi };
+      drag = null;
+      geo.brush(null);
+      geo.unmark();
+      hover = null;
+      return;
+    }
+    if (evt.pointerType === "mouse" && evt.button === 0 && zoomable) {
+      drag = { from: clampI(geo.index(evt)), to: null };
+      body.setPointerCapture?.(evt.pointerId);
+    }
+    hover = clampI(geo.index(evt));
+    geo.mark(hover);
+  });
+  body.addEventListener("pointermove", (evt) => {
+    if (!geo) return;
+    if (touches.has(evt.pointerId)) touches.set(evt.pointerId, evt);
+    if (pinch && touches.size === 2) {
+      evt.preventDefault();
+      const [p1, p2] = [...touches.values()];
+      const d = Math.abs(p1.clientX - p2.clientX) || 1;
+      const span = Math.max(MIN_SPAN - 1, Math.min(n - 1, (pinch.hi - pinch.lo) * (pinch.d / d)));
+      // punkt pod środkiem palców zostaje pod nimi
+      const r = geo.root.getBoundingClientRect();
+      const t = ((p1.clientX + p2.clientX) / 2 - r.left) / r.width;
+      const tPlot = ((t * geo.W) - PAD) / (geo.W - 2 * PAD);
+      let a = pinch.mid - span * tPlot;
+      a = Math.max(0, Math.min(n - 1 - span, a));
+      setRange(a, a + span, true);
+      return;
+    }
+    if (pinch) return;
+    if (evt.pointerType === "mouse" || evt.pressure > 0) {
+      hover = clampI(geo.index(evt));
+      geo.mark(hover);
+      if (drag) { drag.to = hover; geo.brush(drag.from, drag.to); }
+    }
+  });
+  const release = (evt) => {
+    touches.delete(evt.pointerId);
+    if (pinch && touches.size < 2) { pinch = null; return; }
+    if (drag && evt.type === "pointerup") {
+      const { from, to } = drag;
+      drag = null;
+      geo?.brush(null);
+      if (to !== null && Math.abs(to - from) >= MIN_SPAN - 1 && geo && Math.abs(geo.x(to) - geo.x(from)) > 12) {
+        setRange(Math.min(from, to), Math.max(from, to), true);
+      }
+    }
+  };
+  body.addEventListener("pointerup", release);
+  body.addEventListener("pointercancel", (evt) => { release(evt); drag = null; geo?.brush(null); });
+  body.addEventListener("pointerleave", (evt) => {
+    if (evt.pointerType === "mouse" && !drag) { hover = null; geo?.unmark(); }
+    else if (evt.pointerType !== "mouse" && !pinch) { hover = null; geo?.unmark(); }
+  });
+  body.addEventListener("dblclick", () => { if (zoomable) setRange(0, n - 1, true); });
+  // Ctrl/⌘ + kółko albo gest szczypania na gładziku (przeglądarka zgłasza go jako wheel z ctrlKey); poziome przewijanie przesuwa
+  body.addEventListener("wheel", (evt) => {
+    if (!zoomable || !geo) return;
+    if (evt.ctrlKey || evt.metaKey) {
+      evt.preventDefault();
+      zoomBy(Math.exp(Math.max(-0.5, Math.min(0.5, evt.deltaY * 0.01))), geo.index(evt));
+    } else if (Math.abs(evt.deltaX) > Math.abs(evt.deltaY) && (lo > 0 || hi < n - 1)) {
+      evt.preventDefault();
+      const w = hi - lo;
+      const a = Math.max(0, Math.min(n - 1 - w, lo + (evt.deltaX / geo.W) * w));
+      setRange(a, a + w, true);
+    }
+  }, { passive: false });
+
+  wrap.append(lg.ul, readout, body);
+  if (zoomable) wrap.append(nav, tools, summary, asPeriod);
+  else wrap.append(summary);
+  if (!many) lg.ul.hidden = true;
+  recompute();
+  syncTools();
+  drawSummary();
+  show(null);
+
+  let lastW = 0;
+  const onResize = () => { const w = widthOf(body); if (w !== lastW) { lastW = w; draw(); } };
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(onResize).observe(body);
+  requestAnimationFrame(onResize);
   return wrap;
 }
 

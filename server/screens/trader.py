@@ -70,7 +70,7 @@ def stats(ctx, p) -> dict:
             B.metric("Expectancy", s["expectancy"], "pln", sign=True),
             B.metric("Wynik netto", s["total"], "pln", sign=True, tip="Suma wyników wszystkich transakcji po prowizjach i swapach."),
         ]),
-        B.chart(B.line(cum, "pln", 0), "Skumulowany wynik zamkniętych transakcji"),
+        B.chart(B.line(cum, "pln", 0, delta="abs"), "Skumulowany wynik zamkniętych transakcji"),
         B.metrics([
             B.metric("Trzymanie zyskownych", _hold(s["hold_win"]), "text", tip="Czas trzymania"),
             B.metric("Trzymanie stratnych", _hold(s["hold_loss"]), "text", tip="Czas trzymania"),

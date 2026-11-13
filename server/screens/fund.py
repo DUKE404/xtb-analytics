@@ -83,12 +83,12 @@ def tearsheet(ctx, p) -> dict:
         w = f"{window} sesji"
         blocks.append(B.controls([B.control("window", "segmented", "Okno kroczące", window,
                                             [(21, "1 mies."), (63, "3 mies."), (126, "6 mies."), (252, "12 mies.")])]))
-        blocks.append(B.chart(B.line(roll[["sharpe"]].rename(columns={"sharpe": "Sharpe"}).dropna(), "num", 2, zero=True),
+        blocks.append(B.chart(B.line(roll[["sharpe"]].rename(columns={"sharpe": "Sharpe"}).dropna(), "num", 2, zero=True, group="rolling"),
                               "Sharpe kroczący", f"Okno {w}. Pokazuje, czy jakość wyniku jest stała, czy pochodzi z jednego okresu."))
-        blocks.append(B.chart(B.line(roll[["vol"]].rename(columns={"vol": "Zmienność"}).dropna(), "pct", 1),
+        blocks.append(B.chart(B.line(roll[["vol"]].rename(columns={"vol": "Zmienność"}).dropna(), "pct", 1, group="rolling"),
                               "Zmienność krocząca", f"Roczna, okno {w}."))
         if "beta" in roll.columns and roll["beta"].notna().any():
-            blocks.append(B.chart(B.line(roll[["beta"]].rename(columns={"beta": "Beta"}).dropna(), "num", 2, zero=True),
+            blocks.append(B.chart(B.line(roll[["beta"]].rename(columns={"beta": "Beta"}).dropna(), "num", 2, zero=True, group="rolling"),
                                   f"Beta krocząca do {bname}", f"Okno {w}. Rosnąca beta = portfel coraz mocniej chodzi za rynkiem."))
     if len(dd):
         t = dd.assign(peak=dd["peak"].map(lambda d: f"{d:%d.%m.%Y}"), trough=dd["trough"].map(lambda d: f"{d:%d.%m.%Y}"),

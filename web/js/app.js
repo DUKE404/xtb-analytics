@@ -284,6 +284,13 @@ async function boot() {
   }
   if (!boot.wired) {
     window.addEventListener("hashchange", route);
+    // „Ustaw jako okres analiz” pod przybliżonym wykresem: zakres z wykresu staje się okresem wszystkich analiz
+    main.addEventListener("chart-period", async (evt) => {
+      const btn = evt.target.querySelector?.(".as-period");
+      if (btn) { btn.disabled = true; btn.textContent = "Przeliczam…"; }
+      try { await api.setView({ since: evt.detail.since, until: evt.detail.until }); reloadAll(); }
+      catch (err) { main.prepend(errorNote(err)); if (btn) { btn.disabled = false; btn.textContent = "Ustaw jako okres analiz"; } }
+    });
     // aplikacja z ekranu głównego bywa otwarta tygodniami: po powrocie do niej sprawdź, czy nie ma nowej wersji
     document.addEventListener("visibilitychange", async () => {
       if (document.visibilityState === "visible" && api.state.health && await api.newerBuild()) location.reload();

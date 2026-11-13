@@ -368,3 +368,14 @@ kluczem z hasła użytkownika.
 - Dane przykładowe przy plikach w sejfie są pamiętane tylko po świadomym wyborze („Wróć do danych przykładowych”,
   znacznik `demo:chosen`). Zapisany tryb demo bez tego znacznika (pozostałość po błędzie starszej wersji) jest
   traktowany jak tryb z plikami.
+
+### Wykresy liniowe z przybliżaniem
+- Przybliżanie działa w telefonie, bez zapytań do serwera: zakresy 1M/3M/6M/YTD/1R/3L/Całość (tylko te krótsze niż
+  dane), przyciski +/−, mini-wykres całego okresu z oknem (przeciągnij brzeg, środek albo stuknij obok),
+  uszczypnięcie dwoma palcami; na komputerze przeciągnięcie myszą zaznacza fragment, Ctrl/⌘ + kółko lub gest
+  na gładziku przybliża, dwuklik wraca do całości. Jeden palec nadal pokazuje odczyt dnia.
+- Serwer wysyła do 1500 punktów na serię (wcześniej 400), żeby po przybliżeniu było widać dzienne ruchy.
+- „Ustaw jako okres analiz” zamienia widoczny zakres na okres wszystkich analiz (przeliczenie na serwerze).
+- Benchmarki: serie liczone od 100 na początku widocznego okna, pod wykresem zwrot każdej serii w oknie.
+  Wartość portfela: pod wykresem zmiana wartości i wpłat w oknie (zmiana wartości zawiera wpłaty).
+- Wartość portfela i obsunięcie na Przeglądzie (oraz wykresy kroczące w Statystykach) przybliżają się razem.
