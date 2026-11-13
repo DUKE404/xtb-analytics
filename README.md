@@ -148,9 +148,13 @@ Te same dane ułożone tak, jak raportuje je fundusz long/short:
 
 ### Nawigacja
 
-Na dole telefonu (na komputerze: w bocznym panelu) jest pięć zakładek: **Przegląd, Spółki, Wyniki, Ryzyko, Więcej**.
-W „Więcej” są: Symulacje, Trader, Podatki, AI (gdy włączone) oraz Dane i ustawienia. Ekran Ryzyko → CFD pokazuje
-się tylko wtedy, gdy masz pozycje CFD. Okres analizy wybiera się wyłącznie paskiem „Okres” nad treścią.
+Na dole telefonu (na komputerze: w bocznym panelu) jest pięć zakładek: **Przegląd, Pozycje, Wyniki, Ryzyko, Więcej**.
+Menu „Więcej” jest pogrupowane: **Rynek** (Rynki), **Analizy** (Symulacje, Trader, Podatki, AI - gdy włączone)
+i **Konto** (Dane i ustawienia). Pod-zakładki idą od najczęściej oglądanych do narzędzi, np. Ryzyko: VaR, Ekspozycje,
+Long / short, Korelacje, Czynniki, Limity, CFD (tylko przy pozycjach CFD).
+
+Okres analizy wybiera się wyłącznie paskiem „Okres” nad treścią. Pasek jest tylko tam, gdzie zmienia wynik - nie ma
+go na ekranach „na dziś” (Pozycje, Rynki), w Podatkach (własny wybór roku) ani w imporcie i ustawieniach.
 
 ### Wycena na dziś
 
@@ -163,9 +167,9 @@ Transakcji, wpłat i dywidend po dacie raportu aplikacja nie zna - po każdej zm
 Kliknięcie nagłówka kolumny sortuje tabelę (malejąco → rosnąco → kolejność wyjściowa). Pod tabelą jest
 **Pobierz CSV** - plik otwiera się w Excelu (średnik jako separator, przecinek dziesiętny).
 
-### Spółki: lista pozycji, raporty, wiadomości
+### Pozycje: lista, raporty, wiadomości
 
-Dział **Spółki** (druga zakładka na dolnym pasku) otwiera się na zakładce **Lista** - to codzienny rzut oka na portfel:
+Dział **Pozycje** (druga zakładka na dolnym pasku) otwiera się na zakładce **Lista** - to codzienny rzut oka na portfel:
 
 - **Twoje pozycje** - każda pozycja z bieżącą ceną, zmianą dzienną w procentach i w kwocie, wagą w portfelu,
   wynikiem od ceny zakupu, odległością od szczytu z 52 tygodni i datą najbliższego raportu. Kolejność: według
@@ -180,7 +184,7 @@ pół godziny, terminy co 12 godzin. Gdy bieżącej ceny nie da się pobrać, li
 Lista jest zawsze „na dziś” - nie zależy od wybranego okresu analizy. Skład portfela pochodzi z ostatniego
 eksportu z xStation, więc po transakcjach wgraj nowy plik.
 
-Druga zakładka, **Wycena**, to odwrócony DCF opisany niżej.
+Druga zakładka, **Wycena spółek**, to odwrócony DCF opisany niżej.
 
 ### Rynki: stopy USA, notowania, kalendarz makro
 
@@ -201,9 +205,9 @@ okresu analizy (dlatego nie ma tu paska „Okres”):
 (zapasowo Stooq), kalendarz - Forex Factory. Krzywa odświeża się co 3 godziny, notowania co 15 minut, kalendarz
 co godzinę; gdy źródło nie odpowiada, widać ostatnią zapisaną wersję z ostrzeżeniem. W trybie demo dane są zmyślone.
 
-### Spółki: odwrócony DCF, prognozy, ceny docelowe
+### Pozycje: wycena spółek (odwrócony DCF, prognozy, ceny docelowe)
 
-Zakładka **Spółki** pokazuje dla wybranej akcji z portfela:
+Zakładka **Wycena spółek** pokazuje dla wybranej akcji z portfela:
 
 - **odwrócony DCF** - jaki roczny wzrost wolnych przepływów pieniężnych jest wpisany w dzisiejszą wycenę,
   z suwakami stopy dyskonta i wzrostu wiecznego oraz tabelą wrażliwości,

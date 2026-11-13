@@ -159,7 +159,8 @@ def test_overview_numbers_match_engine(client, sid, portfolio):
     assert items["Wartość portfela"] == pytest.approx(float(portfolio.equity.iloc[-1]))
     assert items["Wynik całkowity"] == pytest.approx(portfolio.total_pnl())
     assert len(items) == 6
-    assert out["blocks"][0]["kind"] == "statement" and "19 dni na 20" in out["blocks"][0]["text"]
+    lead = out["blocks"][0]
+    assert lead["kind"] == "statement" and lead["text"].startswith("Portfel jest wart") and "19 dni na 20" in lead["sub"]
     tips = [m["tip"] for b in out["blocks"] if b["kind"] == "metrics" for m in b["items"]]
     assert all(tips), "każda liczba na Przeglądzie musi mieć objaśnienie"
 
@@ -284,7 +285,7 @@ def test_health_reports_build_and_unknown_screen_code(client, sid):
 def test_navigation_is_five_tabs_and_six_more_sections():
     from server.screens import CLIENT_SCREENS, SCREENS, nav_config
     nav = nav_config(ai_enabled=True)
-    assert [s["label"] for s in nav["tabs"]] == ["Przegląd", "Spółki", "Wyniki", "Ryzyko"]          # + "Więcej" = 5 na pasku
+    assert [s["label"] for s in nav["tabs"]] == ["Przegląd", "Pozycje", "Wyniki", "Ryzyko"]          # + "Więcej" = 5 na pasku
     assert [s["label"] for s in nav["more"]] == ["Rynki", "Symulacje", "Trader", "Podatki", "AI", "Dane i ustawienia"]
     ids = [scr["id"] for sec in nav["tabs"] + nav["more"] for scr in sec["screens"]]
     assert len(ids) == len(set(ids))                                             # każdy ekran w jednym miejscu

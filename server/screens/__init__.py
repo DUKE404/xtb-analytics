@@ -79,37 +79,45 @@ SCREENS = {
 }
 
 # Dolny pasek: maks. 5 pozycji. "more" to menu z pozostałymi działami.
+# "noperiod": ekran (albo cały dział) nie zależy od okresu analizy - bez paska „Okres”.
+# Kolejność pod-zakładek: od najczęściej oglądanych do narzędzi.
 NAV = [
     {"id": "overview", "label": "Przegląd", "icon": "home", "screens": [{"id": "overview", "label": "Przegląd"}]},
-    {"id": "companies", "label": "Spółki", "icon": "companies", "screens": [
-        {"id": "companies-list", "label": "Lista"}, {"id": "companies", "label": "Wycena"}]},
+    {"id": "companies", "label": "Pozycje", "icon": "companies", "screens": [
+        {"id": "companies-list", "label": "Lista", "noperiod": True},
+        {"id": "companies", "label": "Wycena spółek", "noperiod": True}]},
     {"id": "perf", "label": "Wyniki", "icon": "chart", "screens": [
         {"id": "perf-summary", "label": "Statystyki"}, {"id": "perf-benchmarks", "label": "Benchmarki"},
         {"id": "perf-periods", "label": "Miesiące"}, {"id": "perf-attribution", "label": "Atrybucja"}]},
     {"id": "risk", "label": "Ryzyko", "icon": "shield", "screens": [
-        {"id": "risk-var", "label": "VaR"}, {"id": "fund-limits", "label": "Limity"},
-        {"id": "risk-exposure", "label": "Ekspozycje"}, {"id": "fund-longshort", "label": "Long / short"},
-        {"id": "risk-correlation", "label": "Korelacje"}, {"id": "risk-factors", "label": "Czynniki"},
+        {"id": "risk-var", "label": "VaR"}, {"id": "risk-exposure", "label": "Ekspozycje"},
+        {"id": "fund-longshort", "label": "Long / short"}, {"id": "risk-correlation", "label": "Korelacje"},
+        {"id": "risk-factors", "label": "Czynniki"}, {"id": "fund-limits", "label": "Limity"},
         {"id": "risk-cfd", "label": "CFD", "needs": "cfd"}]},      # "needs": ekran widoczny tylko, gdy w portfelu są CFD
 ]
+# "group": nagłówek w menu „Więcej” (na komputerze - w bocznym panelu)
 MORE = [
-    {"id": "markets", "label": "Rynki", "hint": "Rentowności i krzywa USA, indeksy, VIX, waluty, kalendarz danych makro",
-     "noperiod": True,            # ekrany „na dziś”, niezależne od portfela - bez paska okresu
+    {"id": "markets", "group": "Rynek", "label": "Rynki", "noperiod": True,
+     "hint": "Rentowności i krzywa USA, indeksy, VIX, waluty, kalendarz danych makro",
      "screens": [{"id": "markets-rates", "label": "Stopy USA"}, {"id": "markets-quotes", "label": "Notowania"},
                  {"id": "markets-calendar", "label": "Kalendarz"}]},
-    {"id": "sim", "label": "Symulacje", "hint": "Scenariusze stresowe, Monte Carlo, symulator transakcji, optymalizacja", "screens": [
+    {"id": "sim", "group": "Analizy", "label": "Symulacje",
+     "hint": "Scenariusze stresowe, Monte Carlo, symulator transakcji, optymalizacja", "screens": [
         {"id": "sim-stress", "label": "Stres"}, {"id": "sim-montecarlo", "label": "Monte Carlo"},
         {"id": "sim-whatif", "label": "Co jeśli"}, {"id": "sim-optimize", "label": "Optymalizacja"}]},
-    {"id": "trader", "label": "Trader", "hint": "Skuteczność, wzorce zachowań, wielkość pozycji, koszty, reżimy rynku", "screens": [
+    {"id": "trader", "group": "Analizy", "label": "Trader",
+     "hint": "Skuteczność, wzorce zachowań, koszty, reżimy rynku, wielkość pozycji", "screens": [
         {"id": "trader-stats", "label": "Statystyki"}, {"id": "trader-patterns", "label": "Wzorce"},
-        {"id": "trader-sizing", "label": "Wielkość pozycji"}, {"id": "trader-costs", "label": "Koszty"},
-        {"id": "trader-regimes", "label": "Reżimy"}]},
-    {"id": "tax", "label": "Podatki", "hint": "Zestawienie do PIT-38: FIFO, kursy NBP, dywidendy zagraniczne",
-     "screens": [{"id": "tax", "label": "PIT-38"}]},
-    {"id": "ai", "label": "AI", "hint": "Memo ryzyka i pytania o portfel (model Claude)", "screens": [{"id": "ai", "label": "AI"}]},
-    {"id": "import", "label": "Dane i ustawienia", "hint": "Wgraj eksport z xStation 5, popraw tickery, benchmark i stopa wolna od ryzyka",
-     "screens": [{"id": "import", "label": "Import"}, {"id": "mapping", "label": "Tickery"},
-                 {"id": "data", "label": "Wczytane dane"}, {"id": "settings", "label": "Ustawienia"}]},
+        {"id": "trader-costs", "label": "Koszty"}, {"id": "trader-regimes", "label": "Reżimy"},
+        {"id": "trader-sizing", "label": "Wielkość pozycji"}]},
+    {"id": "tax", "group": "Analizy", "label": "Podatki", "hint": "Zestawienie do PIT-38: FIFO, kursy NBP, dywidendy zagraniczne",
+     "screens": [{"id": "tax", "label": "PIT-38", "noperiod": True}]},
+    {"id": "ai", "group": "Analizy", "label": "AI", "hint": "Memo ryzyka i pytania o portfel (model Claude)",
+     "screens": [{"id": "ai", "label": "AI"}]},
+    {"id": "import", "group": "Konto", "label": "Dane i ustawienia",
+     "hint": "Wgraj eksport z xStation 5, popraw tickery, benchmark i stopa wolna od ryzyka",
+     "screens": [{"id": "import", "label": "Import", "noperiod": True}, {"id": "mapping", "label": "Tickery", "noperiod": True},
+                 {"id": "data", "label": "Wczytane dane"}, {"id": "settings", "label": "Ustawienia", "noperiod": True}]},
 ]
 CLIENT_SCREENS = {"import", "mapping", "settings", "ai"}   # rysowane w całości po stronie telefonu (web/js/client.js)
 

@@ -71,12 +71,17 @@ function drawTabs(activeId, sectionId = activeId) {
   const { tabs, more } = sections();
   const items = [...tabs.map((t) => ({ id: t.id, label: t.label, icon: t.icon })), { id: "more", label: "Więcej", icon: "more" },
     ...more.map((t) => ({ id: t.id, label: t.label, icon: t.id, extra: true }))];
-  tabsEl.replaceChildren(...items.map((t) => {
+  const groupOf = Object.fromEntries(more.map((t) => [t.id, t.group || ""]));
+  let lastGroup = null;
+  tabsEl.replaceChildren(...items.flatMap((t) => {
     const current = t.extra ? t.id === sectionId : t.id === activeId;
     const b = el("button", { type: "button", class: t.extra ? "extra" : (t.id === "more" ? "more" : null), "aria-current": current ? "page" : null },
       icon(t.icon), el("span", {}, t.label));
     b.addEventListener("click", () => go(t.id));
-    return b;
+    // na komputerze działy z „Więcej” są pogrupowane (Rynek / Analizy / Konto)
+    const g = t.extra ? groupOf[t.id] : null;
+    if (g && g !== lastGroup) { lastGroup = g; return [el("p", { class: "tabs-group", "aria-hidden": "true" }, g), b]; }
+    return [b];
   }));
   tabsEl.hidden = false;
 }
@@ -108,6 +113,22 @@ function drawViewbar() {
   }
   bar.replaceChildren(el("span", { class: "viewbar-label" }, "Okres"), ...chips, range, ...extra);
   bar.hidden = false;
+  scrollHints(bar);
+}
+
+/** Przewijany poziomo pasek: wygaszenie krawędzi tam, gdzie jest jeszcze coś do przewinięcia. */
+function scrollHints(node) {
+  const update = () => {
+    const more = node.scrollWidth - node.clientWidth > 2;
+    node.classList.toggle("fade-l", more && node.scrollLeft > 2);
+    node.classList.toggle("fade-r", more && node.scrollLeft < node.scrollWidth - node.clientWidth - 2);
+  };
+  if (!node.dataset.hints) {
+    node.dataset.hints = "1";
+    node.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+  }
+  requestAnimationFrame(update);
 }
 
 function drawSubnav(section, activeScreen) {
@@ -121,6 +142,7 @@ function drawSubnav(section, activeScreen) {
   subnav.hidden = false;
   const cur = subnav.querySelector('[aria-current="page"]');
   if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest", inline: "center" });
+  scrollHints(subnav);
 }
 
 function drawBar(titleText) {
@@ -212,13 +234,13 @@ function route() {
     if (home) sec = home.id;
   }
 
-  noPeriod = false;
+  noPeriod = sec === "more";
   if (sec === "more") {
     drawTabs("more");
     drawSubnav(null);
     drawBar("Więcej");
     main.dataset.screen = "more";
-    show(moreView(more, (id) => go(id)));
+    show(moreView(more, (id) => go(id), icon));
     window.scrollTo(0, 0);
     return;
   }
@@ -226,7 +248,7 @@ function route() {
   if (!section) { section = tabs[0]; sec = section.id; scr = ""; }
   const screens = section.screens || [{ id: section.id, label: section.label }];
   const screen = screens.find((s) => s.id === scr) || screens[0];
-  noPeriod = !!section.noperiod;
+  noPeriod = !!(section.noperiod || screen.noperiod);
   const inMore = more.includes(section);
   drawTabs(inMore ? "more" : section.id, section.id);
   drawSubnav(section, screen.id);

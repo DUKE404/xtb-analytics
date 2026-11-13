@@ -31,7 +31,7 @@ def benchmarks(ctx, p) -> dict:
                 "WIG20, S&P 500 i Nasdaq 100 to indeksy cenowe (bez dywidend); MSCI World jest liczony ceną ETF-u."),
         B.table(cmp, [("name", "Seria", "text"), ("Zwrot", "Zwrot", "pct", 1), ("CAGR", "CAGR", "pct", 1),
                       ("Zmienność", "Zmienność", "pct", 1), ("Sharpe", "Sharpe", "num", 2),
-                      ("Max drawdown", "Max DD", "pct", 1)], title="Porównanie"),
+                      ("Max drawdown", "Maks. obsunięcie", "pct", 1)], title="Porównanie"),
         B.chart(B.bars(yr, "pct", 1), "Zwroty roczne (cała historia)"),
     ]
     if not len(b.columns):

@@ -82,7 +82,7 @@ def stats(ctx, p) -> dict:
         B.chart(B.bars(pd.DataFrame({"Wynik": hr["net"].values}, index=[f"{h}" for h in hr.index]), "pln", 0),
                 "Wynik wg godziny otwarcia", "Godzina z raportu XTB (czas serwera brokera)."),
         B.table(sym, [("name", "Instrument", "text"), ("net", "Wynik", "pln"), ("n", "Transakcje", "int"),
-                      ("hit_rate", "Hit rate", "pct", 0), ("avg", "Średnio", "pln")], title="Wg instrumentu", limit=8),
+                      ("hit_rate", "Skuteczność", "pct", 0), ("avg", "Średnio", "pln")], title="Wg instrumentu", limit=8),
     ]
     return {"title": "Statystyki", "blocks": blocks}
 

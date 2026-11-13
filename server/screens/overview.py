@@ -21,16 +21,17 @@ def overview(ctx, p) -> dict:
     s = perf.summary(pf.returns, ctx.bench_series(p.bench), p.rf, pf.flows, equity)
     var95 = _var95(ctx)
 
-    if var95 == var95:  # nie NaN
-        lead = (f"W 19 dni na 20 dzisiejszy portfel nie powinien stracić więcej niż {B.f_pln(var95)}, "
-                f"czyli {B.f_pct(var95 / equity, 1)} kapitału.")
-    else:
-        lead = "Portfel jest w gotówce - nie ma dziś otwartych pozycji, które mogłyby tracić na wartości."
     pnl = pf.total_pnl()
-    sub = (f"Od {pf.dates[0].strftime('%d.%m.%Y')} "
-           f"{'zarobił' if pnl >= 0 else 'stracił'} {B.f_pln(abs(pnl))} przy {B.f_pln(pf.invested_capital())} "
-           + ("kapitału na start okresu i wpłat netto." if ctx.since_date is not None else "wpłat netto."))
-
+    start = pf.dates[0].strftime('%d.%m.%Y')
+    lead = (f"Portfel jest wart {B.f_pln(equity)}. Od {start} {'zarobił' if pnl >= 0 else 'stracił'} "
+            f"{B.f_pln(abs(pnl))}, a stopa zwrotu (TWR) to {B.f_pct(s['total_return'], 1, sign=True)}.")
+    base = "Kapitał na start okresu i wpłaty netto" if ctx.since_date is not None else "Wpłaty netto"
+    if var95 == var95:  # nie NaN
+        sub = (f"{base}: {B.f_pln(pf.invested_capital())}. W 19 dni na 20 dzisiejszy portfel nie powinien "
+               f"stracić w ciągu dnia więcej niż {B.f_pln(var95)} ({B.f_pct(var95 / equity, 1)} kapitału).")
+    else:
+        sub = (f"{base}: {B.f_pln(pf.invested_capital())}. Portfel jest w gotówce - nie ma dziś otwartych "
+               "pozycji, które mogłyby tracić na wartości.")
     eq = pd.DataFrame({"Portfel": pf.equity, "Wpłaty netto": pf.flows.cumsum()})
     dd = perf.drawdown_series(pf.returns).to_frame("Obsunięcie")
     blocks = [

@@ -121,15 +121,25 @@ export function loginView(onDone) {
 
 // --------------------------------------------------------------------------- menu "Więcej"
 
-export function moreView(items, go) {
-  const list = el("ul", { class: "menu" });
+export function moreView(items, go, icon = null) {
+  // pozycje pogrupowane jak w ustawieniach telefonu: Rynek / Analizy / Konto
+  const screen = el("div", { class: "screen" });
+  let list = null, last = null;
   for (const it of items) {
-    const btn = el("button", { type: "button" }, el("span", {}, el("span", { class: "t" }, it.label), it.hint ? el("span", { class: "h" }, it.hint) : null),
+    if (!list || (it.group || "") !== last) {
+      last = it.group || "";
+      if (last) screen.append(el("h2", { class: "menu-group" }, last));
+      list = el("ul", { class: "menu" });
+      screen.append(list);
+    }
+    const btn = el("button", { type: "button" },
+      icon ? el("span", { class: "ic", "aria-hidden": "true" }, icon(it.id)) : null,
+      el("span", {}, el("span", { class: "t" }, it.label), it.hint ? el("span", { class: "h" }, it.hint) : null),
       el("i", { class: "chev", "aria-hidden": "true" }));
     btn.addEventListener("click", () => go(it.id));
     list.append(el("li", {}, btn));
   }
-  return el("div", { class: "screen" }, list);
+  return screen;
 }
 
 // --------------------------------------------------------------------------- import

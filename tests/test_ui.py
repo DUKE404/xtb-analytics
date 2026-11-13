@@ -127,7 +127,7 @@ def nav_from_health(pg, base_url):
 
 def test_overview_loads_with_statement_and_six_numbers(page):
     assert page.inner_text("#bar-title") == "Przegląd"
-    assert "19 dni na 20" in page.inner_text(".statement")
+    assert "Portfel jest wart" in page.inner_text(".statement") and "19 dni na 20" in page.inner_text(".statement")
     assert page.locator(".ledger").first.locator("li").count() == 6
     assert page.locator(".chart svg").count() >= 2
     assert "dane przykładowe" in page.inner_text("#bar-meta")
@@ -184,10 +184,11 @@ def test_statistics_screen_has_one_period_selector(page, base_url):
 
 def test_bottom_bar_and_moved_addresses(page, base_url):
     labels = page.locator("#tabs button:visible span").all_inner_texts()
-    assert labels == ["Przegląd", "Spółki", "Wyniki", "Ryzyko", "Więcej"]
-    page.locator("#tabs button", has_text="Spółki").tap()
+    assert labels == ["Przegląd", "Pozycje", "Wyniki", "Ryzyko", "Więcej"]
+    page.locator("#tabs button", has_text="Pozycje").tap()
     wait_ready(page)
-    assert page.inner_text("#bar-title") == "Spółki" and page.locator("table.data").count() >= 1
+    assert page.inner_text("#bar-title") == "Pozycje" and page.locator("table.data").count() >= 1
+    assert not page.locator("#viewbar").is_visible()                            # lista jest „na dziś”, bez paska okresu
     # stare adresy (zakładki w przeglądarce, skróty) trafiają w nowe miejsca
     for old, title, sub in (("#/fund/fund-longshort", "Ryzyko", "Long / short"), ("#/fund", "Wyniki", "Statystyki"),
                             ("#/fund/fund-tearsheet", "Wyniki", "Statystyki"), ("#/settings", "Dane i ustawienia", "Ustawienia")):
@@ -253,6 +254,11 @@ def test_more_menu_import_and_ticker_edit(page, base_url):
     page.wait_for_selector(".menu")
     assert page.locator(".menu button").count() >= 2
     assert page.locator(".menu button").all_inner_texts()[0].startswith("Rynki")
+    groups = [g.text_content() for g in page.locator(".menu-group").all()]
+    assert groups == ["Rynek", "Analizy", "Konto"]                              # menu pogrupowane, z ikonami
+    assert page.locator(".menu .ic svg").count() == page.locator(".menu button").count()
+    assert not page.locator("#viewbar").is_visible()
+    shot(page, "89-more-menu", full=False)
     page.locator(".menu button", has_text="Dane i ustawienia").tap()
     page.wait_for_selector(".drop")
     assert "Ustawienia" in page.locator("#subnav").inner_text()
@@ -282,7 +288,7 @@ def test_upload_of_real_file_from_phone(page, base_url, sample_path):
     page.reload()
     wait_ready(page)
     assert "dane przykładowe" not in page.inner_text("#bar-meta")
-    assert "19 dni na 20" in page.inner_text(".statement")
+    assert "Portfel jest wart" in page.inner_text(".statement") and "19 dni na 20" in page.inner_text(".statement")
     assert not page.errors, page.errors
 
 
@@ -351,7 +357,7 @@ def test_bad_file_shows_readable_error_and_keeps_session(page, base_url, tmp_pat
     assert "Nie rozpoznano" in page.inner_text(".note.error")
     page.goto(base_url + "/#/overview")
     wait_ready(page)
-    assert "19 dni na 20" in page.inner_text(".statement")
+    assert "Portfel jest wart" in page.inner_text(".statement") and "19 dni na 20" in page.inner_text(".statement")
 
 
 def test_custom_stress_scenario_form(page, base_url):
@@ -488,7 +494,7 @@ def test_desktop_layout_has_sidebar_and_tiles(desktop):
     tabs = page.locator("#tabs").bounding_box()
     assert tabs["x"] == 0 and tabs["width"] < 260 and tabs["height"] > 800            # boczny panel, nie pasek na dole
     labels = page.locator("#tabs button:visible span").all_inner_texts()
-    assert "Spółki" in labels and "Podatki" in labels and "Więcej" not in labels      # działy z "Więcej" widać od razu
+    assert "Pozycje" in labels and "Podatki" in labels and "Więcej" not in labels      # działy z "Więcej" widać od razu
     tiles = page.locator(".ledger > li")
     a, b = tiles.nth(0).bounding_box(), tiles.nth(1).bounding_box()
     assert abs(a["y"] - b["y"]) < 2 and b["x"] > a["x"] + 150                         # kafelki obok siebie
@@ -500,9 +506,9 @@ def test_desktop_layout_has_sidebar_and_tiles(desktop):
     shot(page, "d6-statistics", full=False)
     page.locator("#tabs button", has_text="Przegląd").click()
     wait_ready(page)
-    page.locator("#tabs button", has_text="Spółki").click()
+    page.locator("#tabs button", has_text="Pozycje").click()
     wait_ready(page)
-    assert page.inner_text("#bar-title") == "Spółki" and "Na ostatniej sesji" in page.inner_text(".statement")
+    assert page.inner_text("#bar-title") == "Pozycje" and "Na ostatniej sesji" in page.inner_text(".statement")
     assert page.locator("table.data tbody tr").count() >= 10 and page.locator(".feed li").count() >= 5
     assert page.locator("td.pos").count() >= 1 and page.locator("td.neg").count() >= 1      # zmiany na zielono i czerwono
     shot(page, "d5-companies-list")
@@ -587,7 +593,7 @@ def test_stale_screen_link_falls_back_to_overview(page, base_url):
 def test_companies_list_on_phone(page, base_url):
     page.goto(base_url + "/#/companies")
     wait_ready(page)
-    assert page.inner_text("#bar-title") == "Spółki"
+    assert page.inner_text("#bar-title") == "Pozycje"
     assert page.locator("#subnav button[aria-current='page']").inner_text() == "Lista"
     assert "Na ostatniej sesji" in page.inner_text(".statement")
     assert page.locator("table.data").first.locator("tbody tr").count() == 13

@@ -397,3 +397,18 @@ kluczem z hasła użytkownika.
   do czasu - jak w większości serwisów finansowych).
 - Opis stanu rynku (np. przedziały VIX: <15 spokój, 15–20 zwykła zmienność, 20–30 nerwowość, >30 stres) to
   informacja, nie rekomendacja.
+
+### Porządek nawigacji (przegląd całości)
+- Dział „Spółki” nazywa się „Pozycje”: lista obejmuje też ETF-y i CFD, a wycena dotyczy tylko spółek
+  („Wycena spółek”). Adresy (#/companies/...) bez zmian.
+- Pasek „Okres” pokazuje się tylko na ekranach, na które okres wpływa (`noperiod` w `server/screens/__init__.py`
+  - dla działu albo pojedynczego ekranu). Wcześniej był wszędzie, także tam, gdzie nic nie zmieniał.
+- Menu „Więcej” i boczny panel na komputerze są pogrupowane (Rynek / Analizy / Konto), pozycje menu mają ikony.
+- Kolejność pod-zakładek: od pomiaru do narzędzi. Ryzyko: VaR → Ekspozycje → Long / short → Korelacje → Czynniki →
+  Limity → CFD. Trader: kalkulator wielkości pozycji na końcu (to narzędzie, nie statystyka).
+- Przewijane poziomo paski (pod-zakładki, okres) wygaszają krawędź, gdy jest coś dalej - widać, że można przewinąć.
+- Przegląd zaczyna się od wartości portfela i wyniku; VaR jest w drugim zdaniu i w kafelkach.
+- Etykiety po polsku zamiast angielskich skrótów (Maks. obsunięcie, Skuteczność, Oczekiwany wynik transakcji…);
+  objaśnienia są nadal szukane pod dawną nazwą (`LABELS_PL` w `server/blocks.py`). Nazwy własne miar (Sharpe,
+  Sortino, CAGR, VaR, Profit factor) zostają, bo tak je znajdziesz w literaturze i u brokerów.
+

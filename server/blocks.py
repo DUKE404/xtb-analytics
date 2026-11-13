@@ -137,10 +137,16 @@ def statement(text: str, sub: str | None = None) -> dict:
     return {"kind": "statement", "text": no_orphans(text), "sub": no_orphans(sub)}
 
 
+# Etykiety pokazywane po polsku; objaśnienie nadal szukane pod nazwą oryginalną (klucz w TOOLTIPS).
+LABELS_PL = {"Max drawdown": "Maks. obsunięcie", "Hit rate": "Skuteczność (hit rate)",
+             "Payoff ratio": "Średni zysk / średnia strata", "Expectancy": "Oczekiwany wynik transakcji",
+             "Top 5 pozycji": "5 największych pozycji"}
+
+
 def metric(label: str, value, fmt: str = "num", tip: str | None = None, digits: int | None = None,
            note: str | None = None, sign: bool = False) -> dict:
     """Wiersz z liczbą. `tip` to klucz ze słownika TOOLTIPS albo gotowy tekst objaśnienia."""
-    return {"label": label, "value": value, "fmt": fmt, "digits": digits, "note": note, "sign": sign,
+    return {"label": LABELS_PL.get(label, label), "value": value, "fmt": fmt, "digits": digits, "note": note, "sign": sign,
             "tip": TOOLTIPS.get(tip, tip) if tip else TOOLTIPS.get(label)}
 
 

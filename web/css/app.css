@@ -85,6 +85,10 @@ button { background: none; border: 0; padding: 0; cursor: pointer; text-align: i
   background: var(--page); border-bottom: 1px solid var(--line);
 }
 .subnav::-webkit-scrollbar { display: none; }
+/* przewijane paski: wygaszona krawędź pokazuje, że jest coś dalej */
+.subnav.fade-r, .viewbar.fade-r { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
+.subnav.fade-l, .viewbar.fade-l { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 36px), transparent); }
+.subnav.fade-l.fade-r, .viewbar.fade-l.fade-r { -webkit-mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent); }
 .subnav button {
   flex: none; padding: 10px 0 9px; color: var(--ink-3); font-size: 14.5px; border-bottom: 2px solid transparent; margin-bottom: -1px;
 }
@@ -286,11 +290,18 @@ th[aria-sort="ascending"] .th-sort::after { border-bottom-color: var(--brass); b
 .tabs button[aria-current="page"] { color: var(--brass); }
 .tabs button[aria-current="page"] span { color: var(--ink); font-weight: 600; }
 .tabs .extra { display: none; }
+.tabs .tabs-group { display: none; }
 
 /* ---------- menu "Więcej", listy ---------- */
 .menu { margin: 8px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
 .menu li { border-bottom: 1px solid var(--line); }
-.menu button { display: grid; grid-template-columns: 1fr auto; align-items: center; width: 100%; padding: 14px 0; gap: 12px; }
+.menu button { display: grid; grid-template-columns: 1fr auto; align-items: center; width: 100%; padding: 14px 0; gap: 12px; text-align: left; }
+.menu button:has(.ic) { grid-template-columns: auto 1fr auto; }
+.menu .ic { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; background: var(--raised); color: var(--brass); }
+.menu .ic svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.menu-group { margin: 22px 0 0; font: 600 12px/1.2 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.menu-group:first-child { margin-top: 10px; }
+.menu-group + .menu { margin-top: 8px; }
 .menu .t { font: 600 17px/1.25 var(--serif); }
 .menu .h { display: block; margin-top: 2px; font-size: 13px; color: var(--ink-3); }
 .menu .chev { width: 8px; height: 8px; border-right: 1.5px solid var(--ink-3); border-top: 1.5px solid var(--ink-3); transform: rotate(45deg); margin-right: 4px; }
@@ -411,9 +422,8 @@ pre.json { margin: 0; padding: 12px; background: var(--panel); border-radius: 8p
   .tabs button[aria-current="page"] { background: var(--raised); color: var(--brass); box-shadow: inset 2px 0 0 var(--brass); }
   .tabs .more { display: none; }
   .tabs .extra { display: flex; }
-  .tabs .extra:first-of-type { margin-top: 14px; }
-  .tabs .more + .extra { margin-top: 18px; position: relative; }
-  .tabs .more + .extra::before { content: ""; position: absolute; left: 12px; right: 12px; top: -10px; border-top: 1px solid var(--line); }
+  .tabs .tabs-group { display: block; margin: 18px 12px 4px; font-size: 11.5px; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--ink-3); }
 
   .statement p { font-size: 30px; max-width: 30em; }
   main .screen { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 30px 32px; align-items: start; }
