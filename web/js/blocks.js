@@ -266,7 +266,10 @@ const KINDS = { statement, metrics, chart, table, note, bullets, feed, section, 
 export function renderBlock(b, ctx) {
   const fn = KINDS[b.kind];
   if (!fn) return el("p", { class: "note warn" }, `Nieznany blok: ${b.kind}`);
-  return fn(b, ctx);
+  const node = fn(b, ctx);
+  // rodzaj bloku jako klasa: wykresy, liczby, tabele, wiadomości i sekcje rysują się jako karty (app.css)
+  if (node && node.classList) node.classList.add("blk", `blk-${b.kind}`);
+  return node;
 }
 
 export function renderScreen(payload, ctx) {

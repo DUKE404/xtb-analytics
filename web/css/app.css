@@ -1,7 +1,8 @@
 /* XTB Analytics - interfejs mobilny.
    Zasady: aplikacja mówi zdaniami (szeryf), mierzy liczbami (bezszeryfowy systemowy, cyfry tabelaryczne);
-   liczby stoją w wierszach księgi, nie w kafelkach; wykresy idą od krawędzi do krawędzi;
-   mosiądz oznacza wyłącznie to, co da się dotknąć; kolory serii należą do danych. */
+   zdanie otwierające stoi na tle, a wykresy, liczby, tabele i listy - na kartach (wykres i tabela do krawędzi karty);
+   trzy warstwy: tło < karta < element w karcie; mosiądz oznacza wyłącznie to, co da się dotknąć albo jest aktywne;
+   kolory serii należą do danych. */
 
 @font-face {
   font-family: "Ledger Serif";
@@ -16,27 +17,31 @@
 
 :root {
   color-scheme: dark;
-  --page: #11181f;
-  --panel: #18222b;
-  --raised: #1f2b36;
-  --line: #27343f;
-  --line-strong: #364655;
-  --ink: #edf0f2;
-  --ink-2: #b4c0cb;
-  --ink-3: #8695a3;
-  --brass: #dfb055;
+  /* warstwy: tło strony < karta < element w karcie; linie tylko tam, gdzie oddzielają */
+  --page: #0c1217;
+  --panel: #141c23;
+  --raised: #1c2630;
+  --line: #222d37;
+  --line-strong: #314050;
+  --ink: #eef1f4;
+  --ink-2: #b7c2cc;
+  --ink-3: #8696a5;
+  --brass: #e2b25a;
   --brass-ink: #1b1508;
-  --warn: #fab219;
+  --brass-soft: rgba(226, 178, 90, .14);
+  --warn: #f5b023;
 
   /* dane: paleta kategorialna na ciemne tło (sprawdzona pod kątem daltonizmu), kolejność stała */
   --s0: #3987e5; --s1: #d95926; --s2: #199e70; --s3: #c98500;
   --s4: #d55181; --s5: #008300; --s6: #9085e9; --s7: #e66767;
-  --pos: #2fb37f; --neg: #ef6a6a; --neutral: #6f7f8e; --mid: #2b3742;   /* zysk zielony, strata czerwona; znak +/− niesie to samo */
+  --pos: #34c28c; --neg: #f06a6a; --neutral: #6f7f8e; --mid: #2b3742;   /* zysk zielony, strata czerwona; znak +/− niesie to samo */
 
   --serif: "Ledger Serif", ui-serif, "Iowan Old Style", Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
 
-  --gutter: 20px;
+  --gutter: 16px;
+  --card-pad: 16px;
+  --radius: 14px;
   --bar-h: 52px;
   --tabs-h: 58px;
   --safe-top: env(safe-area-inset-top, 0px);
@@ -113,11 +118,11 @@ button { background: none; border: 0; padding: 0; cursor: pointer; text-align: i
 main { padding: 6px var(--gutter) calc(var(--tabs-h) + var(--safe-bottom) + 28px); outline: none; }
 main.is-loading > .screen { opacity: .45; transition: opacity .15s; }
 
-.statement { padding-top: 14px; }
+.statement { padding: 14px 2px 2px; }
 .statement p { margin: 0; font: 500 23px/1.28 var(--serif); letter-spacing: -0.01em; text-wrap: balance; }
 .statement .sub { margin-top: 10px; font: 400 15.5px/1.45 var(--serif); color: var(--ink-2); letter-spacing: 0; text-wrap: pretty; }
 
-.block-title { margin: 0 0 4px; font: 600 17.5px/1.25 var(--serif); }
+.block-title { margin: 0 0 6px; font: 600 17px/1.25 var(--serif); letter-spacing: -0.003em; }
 .caption { margin: 8px 0 0; font-size: 13px; line-height: 1.45; color: var(--ink-3); text-wrap: pretty; }
 
 /* ---------- wiersze księgi (metryki) ---------- */
@@ -145,7 +150,7 @@ button.row[aria-expanded="true"] .hint { border-color: var(--brass); color: var(
 @media (prefers-reduced-motion: reduce) { .tip, main.is-loading > .screen { transition: none; } }
 
 /* ---------- notatki, listy ---------- */
-.note { margin: 0; padding: 12px 14px; border-left: 2px solid var(--line-strong); background: var(--panel); font-size: 14px; color: var(--ink-2); border-radius: 0 6px 6px 0; }
+.note { margin: 0; padding: 12px 14px 12px 15px; border-left: 3px solid var(--line-strong); background: var(--panel); font-size: 13.5px; line-height: 1.5; color: var(--ink-2); border-radius: 4px var(--radius) var(--radius) 4px; }
 .note.warn { border-left-color: var(--warn); }
 .note.error { border-left-color: var(--neg); color: var(--ink); }
 .bullets { margin: 0; padding: 0; list-style: none; }
@@ -207,7 +212,7 @@ details.section > .section-body > * + * { margin-top: 20px; }
 .table-wrap { margin: 0 calc(-1 * var(--gutter)); overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
 table.data { border-collapse: collapse; min-width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
 table.data th { padding: 8px 14px 8px 0; font-weight: 500; color: var(--ink-3); text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line-strong); font-size: 12.5px; }
-table.data td { padding: 9px 14px 9px 0; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+table.data td { padding: 10px 14px 10px 0; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
 table.data th:first-child, table.data td:first-child {
   position: sticky; left: 0; padding-left: var(--gutter); text-align: left; background: var(--page);
   max-width: 44vw; overflow: hidden; text-overflow: ellipsis; color: var(--ink);
@@ -285,24 +290,26 @@ th[aria-sort="ascending"] .th-sort::after { border-bottom-color: var(--brass); b
   background: color-mix(in srgb, var(--page) 92%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   border-top: 1px solid var(--line);
 }
-.tabs button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--ink-3); font-size: 11px; min-width: 0; }
-.tabs button svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.tabs button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--ink-3); font-size: 11px; min-width: 0; }
+.tabs button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.tabs button svg { box-sizing: content-box; padding: 3px 16px; border-radius: 999px; transition: background-color .15s; }
 .tabs button[aria-current="page"] { color: var(--brass); }
+.tabs button[aria-current="page"] svg { background: var(--brass-soft); }
 .tabs button[aria-current="page"] span { color: var(--ink); font-weight: 600; }
 .tabs .extra { display: none; }
 .tabs .tabs-group { display: none; }
 
 /* ---------- menu "Więcej", listy ---------- */
-.menu { margin: 8px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
-.menu li { border-bottom: 1px solid var(--line); }
-.menu button { display: grid; grid-template-columns: 1fr auto; align-items: center; width: 100%; padding: 14px 0; gap: 12px; text-align: left; }
+.menu { margin: 8px 0 0; padding: 0 var(--card-pad); list-style: none; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.menu li + li { border-top: 1px solid var(--line); }
+.menu button { display: grid; grid-template-columns: 1fr auto; align-items: center; width: 100%; padding: 13px 0; gap: 14px; text-align: left; }
 .menu button:has(.ic) { grid-template-columns: auto 1fr auto; }
 .menu .ic { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; background: var(--raised); color: var(--brass); }
 .menu .ic svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.menu-group { margin: 22px 0 0; font: 600 12px/1.2 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.menu-group { margin: 24px 0 0 4px; font: 600 11.5px/1.2 var(--sans); letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
 .menu-group:first-child { margin-top: 10px; }
 .menu-group + .menu { margin-top: 8px; }
-.menu .t { font: 600 17px/1.25 var(--serif); }
+.menu .t { font: 600 16.5px/1.25 var(--serif); }
 .menu .h { display: block; margin-top: 2px; font-size: 13px; color: var(--ink-3); }
 .menu .chev { width: 8px; height: 8px; border-right: 1.5px solid var(--ink-3); border-top: 1.5px solid var(--ink-3); transform: rotate(45deg); margin-right: 4px; }
 .back { display: inline-flex; align-items: center; gap: 8px; margin: 8px 0 0; color: var(--ink-2); font-size: 14px; padding: 6px 0; }
@@ -364,9 +371,39 @@ th[aria-sort="ascending"] .th-sort::after { border-bottom-color: var(--brass); b
   .statement p { font-size: 27px; }
 }
 
+/* ---------- karty ----------
+   Wykresy, liczby, tabele, wiadomości, listy i sekcje stoją na kartach; zdanie otwierające, kontrolki i notatki - na tle.
+   Wykres i tabela wychodzą do krawędzi karty (ujemny margines = wewnętrzny odstęp karty). */
+.blk-chart, .blk-metrics, .blk-table, .blk-feed, .blk-bullets, details.blk-section {
+  padding: 14px var(--card-pad) 12px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.blk-chart .chart-body, .blk-chart .chart-nav { margin-left: calc(-1 * var(--card-pad)); margin-right: calc(-1 * var(--card-pad)); }
+.blk .table-wrap { margin: 2px calc(-1 * var(--card-pad)) 0; }
+.blk table.data th:first-child, .blk table.data td:first-child { padding-left: var(--card-pad); background: var(--panel); }
+.blk table.data th:last-child, .blk table.data td:last-child { padding-right: var(--card-pad); }
+.blk table.data tbody tr:last-child td { border-bottom: 0; }
+.blk .chart .axis-text, .blk-chart .axis-text { stroke: var(--panel); }
+.blk .chart .nav-shade { fill: var(--panel); }
+.blk-metrics .ledger { border-top: 0; }
+.blk-metrics .ledger > li:last-child { border-bottom: 0; }
+.blk-metrics .row { padding: 11px 0 10px; }
+.blk-metrics .block-title + .ledger { margin-top: 2px; }
+.blk-feed .feed li:first-child, .blk-bullets .bullets li:first-child { border-top: 0; }
+.blk-feed .feed li:last-child, .blk-bullets .bullets li:last-child { border-bottom: 0; }
+.blk-table > .caption, .blk-chart > .caption, .blk-feed > .caption { margin-top: 10px; }
+.blk-table .table-tools { margin-top: 4px; }
+details.blk-section { padding-top: 0; padding-bottom: 0; }
+details.blk-section > summary { padding: 14px 0; }
+details.blk-section > .section-body { padding: 0 0 14px; }
+details.section + details.section { border-top: 1px solid var(--line); }
+/* bloki w sekcji nie są kartami w karcie */
+.section-body > .blk { padding: 0; background: none; border: 0; border-radius: 0; }
+
 /* odstępy między blokami ekranu - na końcu, żeby resetowane marginesy bloków ich nie nadpisywały */
-main .screen > * + * { margin-top: 28px; }
-main .screen > .statement + * { margin-top: 22px; }
+main .screen > * + * { margin-top: 16px; }
+main .screen > .statement + * { margin-top: 20px; }
+main .screen > .blk-controls + *, main .screen > * + .blk-controls { margin-top: 20px; }
+main .screen > details.blk-section + details.blk-section { margin-top: 10px; }
 
 /* ---------- AI: memo i czat ---------- */
 .memo h3 { margin: 18px 0 6px; font: 600 17px/1.3 var(--serif); }
@@ -393,7 +430,7 @@ pre.json { margin: 0; padding: 12px; background: var(--panel); border-radius: 8p
 /* ---------- szeroki ekran: stanowisko analityka ----------
    Boczny panel z całą nawigacją, liczby w kafelkach, wykresy parami. Treść ta sama co w telefonie. */
 @media (min-width: 1024px) {
-  :root { --gutter: 36px; --side: 236px; --bar-h: 64px; }
+  :root { --gutter: 36px; --side: 236px; --bar-h: 64px; --card-pad: 20px; }
   body { font-size: 15.5px; }
   #app { max-width: none; margin: 0; padding-left: var(--side); }
   .bar, .subnav, .viewbar, main { max-width: 1360px; margin-left: auto; margin-right: auto; }
@@ -418,7 +455,7 @@ pre.json { margin: 0; padding: 12px; background: var(--panel); border-radius: 8p
     border-radius: 9px; font-size: 14.5px; color: var(--ink-2);
   }
   .tabs button:hover { background: var(--raised); color: var(--ink); }
-  .tabs button svg { width: 20px; height: 20px; flex: none; }
+  .tabs button svg, .tabs button[aria-current="page"] svg { width: 20px; height: 20px; flex: none; padding: 0; background: none; }
   .tabs button[aria-current="page"] { background: var(--raised); color: var(--brass); box-shadow: inset 2px 0 0 var(--brass); }
   .tabs .more { display: none; }
   .tabs .extra { display: flex; }
@@ -428,13 +465,11 @@ pre.json { margin: 0; padding: 12px; background: var(--panel); border-radius: 8p
   .statement p { font-size: 30px; max-width: 30em; }
   main .screen { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 30px 32px; align-items: start; }
   main .screen > * { grid-column: 1 / -1; margin-top: 0 !important; min-width: 0; }
-  main .screen > figure.chart { grid-column: span 6; padding: 18px 20px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  main .screen > figure.chart { grid-column: span 6; padding: 18px var(--card-pad) 16px; }
   /* wykres bez sąsiada zajmuje całą szerokość */
   main .screen > :not(figure.chart) + figure.chart:has(+ :not(figure.chart)),
   main .screen > :not(figure.chart) + figure.chart:last-child,
   main .screen > figure.chart:first-child:has(+ :not(figure.chart)) { grid-column: 1 / -1; }
-  .chart-body { margin: 8px 0 0; }
-  .chart-nav { margin: 4px 0 0; }
   .chart-tools button:hover:not(:disabled) { color: var(--ink); }
   .as-period:hover { color: var(--ink-2); }
   main .screen > .controls, main .screen > .control { max-width: 760px; }
@@ -442,18 +477,20 @@ pre.json { margin: 0; padding: 12px; background: var(--panel); border-radius: 8p
   main .screen > p.note, main .screen > .caption { max-width: 960px; }
 
   /* liczby: kafelki zamiast wierszy */
+  main .screen > .blk-metrics { padding: 0; background: none; border: 0; }
   main .screen .ledger { display: grid; grid-template-columns: repeat(auto-fit, minmax(172px, 1fr)); gap: 12px; border-top: 0; margin-top: 10px; }
-  main .screen .ledger > li { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px 16px; }
+  main .screen .ledger > li, main .screen .blk-metrics .ledger > li:last-child { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 16px; }
   main .screen .ledger .row { grid-template-columns: 1fr; row-gap: 6px; padding: 12px 0 13px; }
   main .screen .ledger .row .label { font-size: 13px; color: var(--ink-3); }
   main .screen .ledger .row .value { font-size: 24px; text-align: left; letter-spacing: -0.01em; }
   main .screen .ledger .row .value-note { justify-self: start; text-align: left; }
   main .screen .ledger li:hover { border-color: var(--line-strong); }
 
-  .table-wrap { margin: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .table-wrap { margin: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+  .blk .table-wrap { border: 0; border-radius: 0; background: none; }
   table.data th:first-child, table.data td:first-child { padding-left: 18px; }
   table.data th:last-child, table.data td:last-child { padding-right: 18px; }
-  table.data tbody tr:hover td { background: var(--raised); }
+  table.data tbody tr:hover td, .blk table.data tbody tr:hover td { background: var(--raised); }
   .sheet { left: 50%; right: auto; bottom: auto; top: 10vh; width: 520px; max-height: 80vh; transform: translateX(-50%); border-radius: 16px; }
   .menu, .login, .steps { max-width: 760px; }
   main .screen .feed { max-width: 860px; }

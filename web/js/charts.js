@@ -4,7 +4,7 @@
 import { el, fmt, fmtAxis, fmtDate, isNum, niceTicks } from "./format.js";
 
 const NS = "http://www.w3.org/2000/svg";
-const PAD = 20; // margines boczny = --gutter; wykres idzie od krawędzi do krawędzi
+const PAD = 16; // margines boczny = --card-pad; wykres idzie od krawędzi do krawędzi karty
 
 function svg(tag, attrs = {}, ...children) {
   const n = document.createElementNS(NS, tag);

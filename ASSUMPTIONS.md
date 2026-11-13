@@ -412,3 +412,15 @@ kluczem z hasła użytkownika.
   objaśnienia są nadal szukane pod dawną nazwą (`LABELS_PL` w `server/blocks.py`). Nazwy własne miar (Sharpe,
   Sortino, CAGR, VaR, Profit factor) zostają, bo tak je znajdziesz w literaturze i u brokerów.
 
+### Wygląd: karty, paleta, odstępy
+- Bloki z danymi (wykres, liczby, tabela, wiadomości, lista, sekcja zwijana) rysują się jako karty; zdanie
+  otwierające, kontrolki i notatki stoją na tle. Front dodaje każdemu blokowi klasę `blk-<rodzaj>` (web/js/blocks.js),
+  więc nowy ekran dostaje wygląd bez zmian w CSS. Blok w zwijanej sekcji nie jest kartą w karcie.
+- Paleta: ciemniejsze tło i wyraźniejsze warstwy (tło #0c1217 < karta #141c23 < element #1c2630); zieleń i czerwień
+  wyników nieco jaśniejsze. Mosiądz bez zmian - to kolor rzeczy dotykalnych i aktywnych.
+- Margines boczny 16 px na telefonie (było 20), wewnętrzny odstęp kart 16 px (na komputerze 20), promień 14 px;
+  odstęp między kartami 16 px. Wykres w karcie idzie do jej krawędzi, a jego wewnętrzny margines (PAD w charts.js)
+  równa się odstępowi karty.
+- Dolny pasek: aktywna zakładka ma ikonę na mosiężnej „pigułce”. Menu „Więcej”: pogrupowane listy w kartach.
+- Na komputerze kafelki liczb zostają osobnymi kartami (bez zewnętrznej karty), tabela nie ma podwójnej ramki.
+
