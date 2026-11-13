@@ -304,7 +304,7 @@ function lineChart(spec) {
   const nav = el("div", { class: "chart-nav" });
   let navGeo = null;
   function drawNav(W) {
-    const H = 40, top = 4, plotH = H - 2 * top;
+    const H = 30, top = 3, plotH = H - 2 * top;
     const vals = spec.series[0].values;
     const nums = vals.filter(isNum);
     if (!nums.length) return;
@@ -315,12 +315,12 @@ function lineChart(spec) {
     let d = "", pen = false;
     vals.forEach((v, i) => { if (!isNum(v)) { pen = false; return; } d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`; pen = true; });
     const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, "aria-hidden": "true" },
-      svg("path", { d, fill: "none", stroke: color(spec.series[0].color), "stroke-width": 1.2, "stroke-opacity": 0.7 }),
+      svg("path", { d, fill: "none", stroke: color(spec.series[0].color), "stroke-width": 1, "stroke-opacity": 0.55 }),
       svg("rect", { class: "nav-shade", x: 0, y: 0, width: Math.max(0, x(lo)), height: H }),
       svg("rect", { class: "nav-shade", x: x(hi), y: 0, width: Math.max(0, W - x(hi)), height: H }),
-      svg("rect", { class: "nav-window", x: x(lo), y: 0.5, width: Math.max(2, x(hi) - x(lo)), height: H - 1, rx: 3 }),
-      svg("rect", { class: "nav-handle", x: x(lo) - 3, y: H / 2 - 9, width: 6, height: 18, rx: 2 }),
-      svg("rect", { class: "nav-handle", x: x(hi) - 3, y: H / 2 - 9, width: 6, height: 18, rx: 2 }));
+      svg("rect", { class: "nav-window", x: x(lo), y: 0.5, width: Math.max(2, x(hi) - x(lo)), height: H - 1, rx: 2 }),
+      svg("rect", { class: "nav-handle", x: x(lo) - 1.5, y: H / 2 - 6, width: 3, height: 12, rx: 1.5 }),
+      svg("rect", { class: "nav-handle", x: x(hi) - 1.5, y: H / 2 - 6, width: 3, height: 12, rx: 1.5 }));
     navGeo = { root, W, x, at: (evt) => ((pointerX(evt, root, W) - PAD) / (W - 2 * PAD)) * (n - 1) };
     nav.replaceChildren(root);
   }

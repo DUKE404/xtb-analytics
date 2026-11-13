@@ -237,21 +237,21 @@ th[aria-sort="ascending"] .th-sort::after { border-bottom-color: var(--brass); b
 .readout { margin: 4px 0 0; min-height: 19px; font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .readout b { color: var(--ink); font-weight: 600; }
 /* wykres z przybliżaniem: mini-wykres całego okresu z oknem, zakresy, +/− */
-.chart .brush { fill: var(--brass); fill-opacity: .16; stroke: var(--brass); stroke-opacity: .6; }
+.chart .brush { fill: var(--ink); fill-opacity: .07; stroke: var(--ink-3); stroke-opacity: .5; }
 .chart-nav { margin: 4px calc(-1 * var(--gutter)) 0; touch-action: none; cursor: grab; }
 .chart-nav:active { cursor: grabbing; }
 .chart .chart-nav svg { touch-action: none; }
-.chart .nav-shade { fill: var(--page); fill-opacity: .62; }
-.chart .nav-window { fill: none; stroke: var(--brass); stroke-width: 1.2; }
-.chart .nav-handle { fill: var(--brass); }
-.chart-tools { display: flex; align-items: center; gap: 4px; margin-top: 8px; overflow-x: auto; scrollbar-width: none; }
+.chart .nav-shade { fill: var(--page); fill-opacity: .5; }
+.chart .nav-window { fill: var(--ink); fill-opacity: .04; stroke: var(--ink-3); stroke-opacity: .45; stroke-width: 1; }
+.chart .nav-handle { fill: var(--ink-3); }
+.chart-tools { display: flex; align-items: center; gap: 2px; margin-top: 6px; overflow-x: auto; scrollbar-width: none; }
 .chart-tools::-webkit-scrollbar { display: none; }
 .chart-tools button {
-  flex: none; min-height: 30px; min-width: 34px; padding: 4px 9px; border-radius: 8px; font-size: 12.5px; font-weight: 500;
-  color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line); font-variant-numeric: tabular-nums;
+  flex: none; min-height: 30px; min-width: 32px; padding: 4px 7px; border-radius: 7px; font-size: 12px; font-weight: 500;
+  color: var(--ink-3); font-variant-numeric: tabular-nums;
 }
-.chart-tools button[aria-pressed="true"] { color: var(--ink); box-shadow: inset 0 0 0 1px var(--brass); background: var(--raised); font-weight: 600; }
-.chart-tools button.zoom { display: inline-flex; align-items: center; justify-content: center; font-size: 17px; line-height: 1; padding: 4px 0; width: 34px; }
+.chart-tools button[aria-pressed="true"] { color: var(--ink); background: var(--raised); font-weight: 600; }
+.chart-tools button.zoom { display: inline-flex; align-items: center; justify-content: center; font-size: 16px; line-height: 1; padding: 4px 0; width: 30px; min-width: 30px; }
 .chart-tools button:disabled { opacity: .35; }
 .chart-tools .spacer { flex: 1 0 6px; }
 .window-sum { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 8px 0 0; font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
@@ -259,7 +259,7 @@ th[aria-sort="ascending"] .th-sort::after { border-bottom-color: var(--brass); b
 .window-sum b.pos { color: var(--pos); }
 .window-sum b.neg { color: var(--neg); }
 .window-sum .window-dates { color: var(--ink-2); }
-.as-period { margin-top: 8px; font-size: 12.5px; color: var(--brass); text-decoration: underline; text-underline-offset: 3px; padding: 4px 0; }
+.as-period { margin-top: 6px; font-size: 12px; color: var(--ink-3); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; padding: 4px 0; }
 
 .hbars { display: grid; gap: 9px; margin-top: 10px; }
 .hbar { display: grid; grid-template-columns: minmax(34px, min(var(--name-w, 34%), 42%)) 1fr auto; align-items: center; column-gap: 10px; font-size: 13.5px; }
@@ -425,7 +425,8 @@ pre.json { margin: 0; padding: 12px; background: var(--panel); border-radius: 8p
   main .screen > figure.chart:first-child:has(+ :not(figure.chart)) { grid-column: 1 / -1; }
   .chart-body { margin: 8px 0 0; }
   .chart-nav { margin: 4px 0 0; }
-  .chart-tools button:hover:not(:disabled) { color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink-3); }
+  .chart-tools button:hover:not(:disabled) { color: var(--ink); }
+  .as-period:hover { color: var(--ink-2); }
   main .screen > .controls, main .screen > .control { max-width: 760px; }
   main .screen > .controls:not(.grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; align-items: end; }
   main .screen > p.note, main .screen > .caption { max-width: 960px; }
