@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 
@@ -59,6 +60,7 @@ GROUPS = ["Indeksy", "Zmienność", "Waluty", "Surowce"]
 
 TTL_HOURS = {"yields": 3.0, "quotes": 0.25, "calendar": 1.0}
 HISTORY_DAYS = 400
+log = logging.getLogger("xtb.markets")
 
 
 # --------------------------------------------------------------------------- #
@@ -219,16 +221,24 @@ def fetch_instrument(key: str, today: pd.Timestamp) -> tuple[pd.Series, str]:
 
 
 def fetch_calendar() -> list[dict]:
-    events, ok = [], False
+    events, ok, errors = [], False, []
     for url in CALENDAR_URLS:
         try:
-            events += parse_calendar_json(_get(url, timeout=20).json())
+            r = _get(url, timeout=20)
+            try:
+                payload = r.json()
+            except ValueError as exc:
+                raise ValueError(f"odpowiedź nie jest JSON ({r.headers.get('content-type', '?')}): "
+                                 f"{r.text[:80]!r}") from exc
+            events += parse_calendar_json(payload)
             ok = True
-        except Exception:
-            continue
+        except Exception as exc:
+            errors.append(f"{url.rsplit('/', 1)[-1]}: {exc}")
+    for e in errors:
+        log.warning("kalendarz makro: %s", e)
     if not ok:
         from data.providers import DataUnavailable
-        raise DataUnavailable("kalendarz makro: brak odpowiedzi")
+        raise DataUnavailable("; ".join(errors) or "brak odpowiedzi")
     seen, out = set(), []
     for e in sorted(events, key=lambda e: (e["time"], e["country"], e["title"])):
         k = (e["time"], e["country"], e["title"])
@@ -293,6 +303,8 @@ def live_markets(cache, today=None, workers: int = 4) -> dict:
     sources = sorted({v[1] for _, v in res if v is not None})
 
     cal = cached("mk:calendar", TTL_HOURS["calendar"], fetch_calendar, json.dumps, json.loads, "Kalendarz makro")
+    for w in warnings:
+        log.warning(w)
     return {"yields": y["df"] if y else None, "yields_source": y["source"] if y else None,
             "prices": prices, "prices_source": ", ".join(sources) or None,
             "calendar": cal, "calendar_source": "Forex Factory" if cal is not None else None,
