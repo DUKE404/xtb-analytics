@@ -252,7 +252,7 @@ def test_more_menu_import_and_ticker_edit(page, base_url):
     page.locator("#tabs button", has_text="Więcej").tap()
     page.wait_for_selector(".menu")
     assert page.locator(".menu button").count() >= 2
-    assert page.locator(".menu button").all_inner_texts()[0].startswith("Symulacje")
+    assert page.locator(".menu button").all_inner_texts()[0].startswith("Rynki")
     page.locator(".menu button", has_text="Dane i ustawienia").tap()
     page.wait_for_selector(".drop")
     assert "Ustawienia" in page.locator("#subnav").inner_text()
@@ -604,6 +604,44 @@ def test_companies_list_on_phone(page, base_url):
     first = page.locator("table.data").first.locator("tbody tr").first.inner_text()
     assert "za " in first or "dziś" in first or "jutro" in first
     shot(page, "94-companies-list")
+    assert not page.errors, page.errors
+
+
+def test_markets_tab_curve_quotes_and_calendar(page, base_url):
+    page.locator("#tabs button", has_text="Więcej").tap()
+    page.wait_for_selector(".menu")
+    page.locator(".menu button", has_text="Rynki").tap()
+    wait_ready(page)
+    assert page.locator("#subnav button[aria-current='page']").inner_text() == "Stopy USA"
+    assert "obligacji USA" in page.inner_text(".statement")
+    # krzywa: trzy serie (dziś, tydzień, miesiąc temu) i odczyt pod palcem
+    curve = page.locator(".chart svg").first
+    assert page.locator(".legend").first.locator("li").count() == 3
+    assert curve.locator("circle").count() >= 3 * 13
+    box = curve.bounding_box()
+    page.mouse.move(box["x"] + box["width"] * 0.9, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    assert page.locator(".readout").first.inner_text() in ("20Y", "30Y")
+    page.mouse.up()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    shot(page, "95-markets-rates")
+
+    page.locator("#subnav button", has_text="Notowania").tap()
+    wait_ready(page)
+    tables = page.inner_text("main")
+    for name in ("S&P 500", "VIX", "EUR/USD", "USD/PLN", "Złoto"):
+        assert name in tables
+    shot(page, "96-markets-quotes")
+
+    page.locator("#subnav button", has_text="Kalendarz").tap()
+    wait_ready(page)
+    assert "Najbliższa ważna publikacja" in page.inner_text(".statement")
+    page.locator(".segmented button", has_text="USA i Europa").tap()
+    page.wait_for_function("document.querySelector('.segmented button[aria-pressed=true]')?.textContent === 'USA i Europa'", timeout=30000)
+    wait_ready(page)
+    assert "Strefa euro" in page.inner_text("main")
+    assert not page.locator("#viewbar").is_visible()                            # rynki nie zależą od okresu analizy
+    shot(page, "97-markets-calendar")
     assert not page.errors, page.errors
 
 

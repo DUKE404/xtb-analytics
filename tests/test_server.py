@@ -10,7 +10,7 @@ from server.screens import NAV, SCREENS
 from server.sessions import SessionStore
 from tests.helpers import authed_client
 
-CHART_TYPES = {"line", "hbar", "bars", "heatmap", "hist", "fan"}
+CHART_TYPES = {"line", "hbar", "bars", "heatmap", "hist", "fan", "curve"}
 FMTS = {"zl", "pln", "pct", "num", "int", "days", "x", "text"}
 
 
@@ -56,6 +56,10 @@ def check_chart(c):
         assert len(c["z"]) == len(c["rows"]) and all(len(r) == len(c["cols"]) for r in c["z"])
     elif c["type"] == "hist":
         assert len(c["edges"]) == len(c["counts"]) + 1 and sum(c["counts"]) > 0
+    elif c["type"] == "curve":
+        assert len(c["labels"]) >= 2 and c["series"]
+        for s in c["series"]:
+            assert len(s["values"]) == len(c["labels"]) and s["name"]
     elif c["type"] == "fan":
         assert len(c["median"]) == len(c["x"])
         for b in c["bands"]:
@@ -277,11 +281,11 @@ def test_health_reports_build_and_unknown_screen_code(client, sid):
     assert r.status_code == 404 and r.get_json()["code"] == "no_screen"
 
 
-def test_navigation_is_five_tabs_and_five_more_sections():
+def test_navigation_is_five_tabs_and_six_more_sections():
     from server.screens import CLIENT_SCREENS, SCREENS, nav_config
     nav = nav_config(ai_enabled=True)
     assert [s["label"] for s in nav["tabs"]] == ["Przegląd", "Spółki", "Wyniki", "Ryzyko"]          # + "Więcej" = 5 na pasku
-    assert [s["label"] for s in nav["more"]] == ["Symulacje", "Trader", "Podatki", "AI", "Dane i ustawienia"]
+    assert [s["label"] for s in nav["more"]] == ["Rynki", "Symulacje", "Trader", "Podatki", "AI", "Dane i ustawienia"]
     ids = [scr["id"] for sec in nav["tabs"] + nav["more"] for scr in sec["screens"]]
     assert len(ids) == len(set(ids))                                             # każdy ekran w jednym miejscu
     assert set(ids) == set(SCREENS) | CLIENT_SCREENS                             # żaden ekran nie został bez wejścia

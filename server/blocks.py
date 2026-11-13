@@ -1,7 +1,7 @@
 """Klocki, z których serwer składa ekrany. Interfejs mobilny umie narysować każdy z nich,
 więc nowy ekran to tylko nowa funkcja w Pythonie - bez zmian we froncie.
 
-Rodzaje bloków: statement, metrics, chart, table, note, bullets, controls, section, download.
+Rodzaje bloków: statement, metrics, chart, table, note, bullets, controls, section, download, feed.
 Formaty liczb (`fmt`): pln (kwota w walucie wyświetlania), zl (zawsze złote), pct, num, int, days,
 x (mnożnik), text.
 Kolory serii: numer miejsca w palecie 0-7 albo nazwa: 'neutral', 'pos', 'neg'.
@@ -279,3 +279,11 @@ def fan(x, bands: list[tuple], median, fmt: str = "pln", digits: int | None = No
     return {"type": "fan", "x": [str(v) for v in x],
             "bands": [{"label": b[0], "lo": _round(b[1]), "hi": _round(b[2])} for b in bands],
             "median": _round(median), "fmt": fmt, "digits": digits, "lines": lines or []}
+
+
+def curve(labels: list[str], series: list[dict], fmt: str = "pct", digits: int | None = None) -> dict:
+    """Linie nad osią kategorii (np. krzywa rentowności według zapadalności).
+    series: [{"name", "values" (po jednej na etykietę, None = brak), "color"}]."""
+    return {"type": "curve", "labels": [str(x) for x in labels], "fmt": fmt, "digits": digits,
+            "series": [{"name": str(s["name"]), "values": _round([math.nan if v is None else v for v in s["values"]]),
+                        "color": s.get("color", i % 8)} for i, s in enumerate(series)]}

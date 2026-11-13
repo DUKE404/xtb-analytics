@@ -45,7 +45,7 @@ class Params:
         return str(v).lower() in ("1", "true", "tak", "on", "yes")
 
 
-from server.screens import companies, fund, overview, watchlist, performance, risk, sim, tax, trader  # noqa: E402
+from server.screens import companies, fund, markets, overview, watchlist, performance, risk, sim, tax, trader  # noqa: E402
 
 SCREENS = {
     "companies-list": watchlist.companies_list,
@@ -73,6 +73,9 @@ SCREENS = {
     "trader-costs": trader.costs,
     "trader-regimes": trader.regime_screen,
     "tax": tax.screen,
+    "markets-rates": markets.rates,
+    "markets-quotes": markets.quotes,
+    "markets-calendar": markets.calendar,
 }
 
 # Dolny pasek: maks. 5 pozycji. "more" to menu z pozostałymi działami.
@@ -90,6 +93,10 @@ NAV = [
         {"id": "risk-cfd", "label": "CFD", "needs": "cfd"}]},      # "needs": ekran widoczny tylko, gdy w portfelu są CFD
 ]
 MORE = [
+    {"id": "markets", "label": "Rynki", "hint": "Rentowności i krzywa USA, indeksy, VIX, waluty, kalendarz danych makro",
+     "noperiod": True,            # ekrany „na dziś”, niezależne od portfela - bez paska okresu
+     "screens": [{"id": "markets-rates", "label": "Stopy USA"}, {"id": "markets-quotes", "label": "Notowania"},
+                 {"id": "markets-calendar", "label": "Kalendarz"}]},
     {"id": "sim", "label": "Symulacje", "hint": "Scenariusze stresowe, Monte Carlo, symulator transakcji, optymalizacja", "screens": [
         {"id": "sim-stress", "label": "Stres"}, {"id": "sim-montecarlo", "label": "Monte Carlo"},
         {"id": "sim-whatif", "label": "Co jeśli"}, {"id": "sim-optimize", "label": "Optymalizacja"}]},

@@ -536,6 +536,11 @@ class LiveMarketData:
         df = self._prices(f"bench:{key}", yf_c, stq, start, end)
         return df["close"].rename(key), cur
 
+    def markets(self, today=None) -> dict:
+        """Dane do zakładki „Rynki” (rentowności USA, notowania, kalendarz makro) - patrz data/markets.py."""
+        from data.markets import live_markets
+        return live_markets(self.cache, today, workers=self.max_workers)
+
     def ff_factors(self, start, end) -> pd.DataFrame:
         raw = self.cache.get_kv("ff_factors", max_age_hours=24 * 7)
         if raw is None:

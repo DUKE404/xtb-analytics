@@ -22,11 +22,13 @@ const ICONS = {
   ai: "M12 4v2.5M12 17.5V20M4 12h2.5M17.5 12H20M9 9h6v6H9z",
   import: "M12 4v10M8 10l4 4 4-4M5 19h14",
   settings: "M5 8h9M18 8h1M5 16h1M10 16h9M16 6v4M8 14v4",
+  markets: "M4 19h16M4 15l4-5 4 3 4-6 4 4M17 7h3v3",
 };
 const PERIOD_SHORT = { "": "Całość", ytd: "YTD", "12m": "12M", "24m": "24M", "36m": "3L" };
 const CLIENT_SCREENS = new Set(["import", "mapping", "settings", "ai"]);
 const screenParams = new Map();   // parametry kontrolek zapamiętane per ekran
 let loadToken = 0;
+let noPeriod = false;              // dział niezależny od okresu analizy (np. Rynki) - bez paska okresu
 
 /** Działy z serwera; ekrany oznaczone "needs" pokazują się tylko, gdy mają sens (np. CFD tylko przy pozycjach CFD). */
 function sections() {
@@ -83,7 +85,7 @@ function drawTabs(activeId, sectionId = activeId) {
 function drawViewbar() {
   const bar = $("viewbar");
   const s = api.state.session;
-  if (!s || !s.since_choices) { bar.hidden = true; return; }
+  if (!s || !s.since_choices || noPeriod) { bar.hidden = true; return; }
   const custom = !!s.until || (!!s.since && !(s.since in PERIOD_SHORT));
   const apply = async (view, btn) => {
     bar.querySelectorAll("button").forEach((b) => { b.disabled = true; });
@@ -210,6 +212,7 @@ function route() {
     if (home) sec = home.id;
   }
 
+  noPeriod = false;
   if (sec === "more") {
     drawTabs("more");
     drawSubnav(null);
@@ -223,6 +226,7 @@ function route() {
   if (!section) { section = tabs[0]; sec = section.id; scr = ""; }
   const screens = section.screens || [{ id: section.id, label: section.label }];
   const screen = screens.find((s) => s.id === scr) || screens[0];
+  noPeriod = !!section.noperiod;
   const inMore = more.includes(section);
   drawTabs(inMore ? "more" : section.id, section.id);
   drawSubnav(section, screen.id);

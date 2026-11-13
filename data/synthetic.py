@@ -266,5 +266,9 @@ class SyntheticMarketData:
             "source": "dane syntetyczne (demo)", "fetched": str(self.market.dates[-1].date()),
         }
 
+    def markets(self, today=None) -> dict:
+        from data.markets import demo_markets
+        return demo_markets(self.market.dates[-1])
+
     def ff_factors(self, start, end) -> pd.DataFrame:
         return self.market.factors.loc[pd.Timestamp(start):pd.Timestamp(end)]

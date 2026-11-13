@@ -17,6 +17,7 @@ Aplikacja jest wyłącznie analityczna. Nie loguje się do konta XTB, nie skład
 | **Wyniki** | TWR i XIRR, CAGR, Sharpe, Sortino, Calmar, obsunięcia, beta i alfa; porównanie z WIG20, WIG, S&P 500 i MSCI World w PLN; zwroty miesięczne; atrybucja wyniku na pozycje, sektory, kraje i waluty |
 | **Ryzyko** | VaR i CVaR 95%/99% na 1 i 10 dni trzema metodami; korelacje i udział pozycji w ryzyku; ekspozycje i koncentracja; czynniki Fama-French; dźwignia i odległość do stop outu na CFD |
 | **Symulacje** | Scenariusze 2008, marzec 2020, 2022 i własne; Monte Carlo na 1/5/10 lat; „co jeśli” przed transakcją; porównanie z portfelami modelowymi |
+| **Rynki** (w „Więcej”) | Rentowności obligacji USA i krzywa (dziś, tydzień i miesiąc temu), spready; indeksy, VIX, waluty i surowce; kalendarz danych makro (głównie USA) |
 | **Trader** (w „Więcej”) | Hit rate, payoff, profit factor, wzorce zachowań, kalkulator wielkości pozycji, koszty, reżimy rynku |
 | **Podatki** (w „Więcej”) | Zestawienie do PIT-38: FIFO, kursy NBP, dywidendy zagraniczne; eksport do PDF i CSV |
 | **AI** (opcjonalnie) | Memo ryzyka i pytania o portfel - pojawia się po ustawieniu klucza API |
@@ -180,6 +181,25 @@ Lista jest zawsze „na dziś” - nie zależy od wybranego okresu analizy. Skł
 eksportu z xStation, więc po transakcjach wgraj nowy plik.
 
 Druga zakładka, **Wycena**, to odwrócony DCF opisany niżej.
+
+### Rynki: stopy USA, notowania, kalendarz makro
+
+Dział **Rynki** (pierwsza pozycja w „Więcej”) pokazuje sytuację na rynkach - niezależnie od portfela i od wybranego
+okresu analizy (dlatego nie ma tu paska „Okres”):
+
+- **Stopy USA** - krzywa rentowności obligacji skarbowych USA od 1 miesiąca do 30 lat: dziś, tydzień i miesiąc temu
+  na jednym wykresie; tabela rentowności ze zmianami w punktach bazowych (dzień, tydzień, miesiąc, od początku
+  roku, 12 miesięcy); spready 10 lat − 2 lata, 10 lat − 3 mies. i 30 lat − 5 lat; historia z 12 miesięcy.
+- **Notowania** - główne indeksy (S&P 500, Nasdaq 100, Dow Jones, Russell 2000, Euro Stoxx 50, DAX, WIG20,
+  Nikkei 225), VIX i VIX 3M, waluty (DXY, EUR/USD, USD/PLN, EUR/PLN, GBP/USD, USD/JPY, CHF/PLN), złoto i ropa Brent -
+  ze zmianami w tych samych oknach i wykresami z 12 miesięcy.
+- **Kalendarz** - zbliżające się publikacje makro na ten i przyszły tydzień, pogrupowane według dni, w czasie
+  polskim, z prognozą i poprzednim odczytem. Domyślnie USA i dane ważne; filtry: USA / USA i Europa / wszystkie
+  kraje oraz waga danych.
+
+Źródła (bez kluczy API): krzywa - US Treasury (zapasowo FRED, a potem Yahoo), notowania - Yahoo Finance
+(zapasowo Stooq), kalendarz - Forex Factory. Krzywa odświeża się co 3 godziny, notowania co 15 minut, kalendarz
+co godzinę; gdy źródło nie odpowiada, widać ostatnią zapisaną wersję z ostrzeżeniem. W trybie demo dane są zmyślone.
 
 ### Spółki: odwrócony DCF, prognozy, ceny docelowe
 

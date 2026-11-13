@@ -709,7 +709,73 @@ function fanChart(spec) {
   return wrap;
 }
 
-const RENDERERS = { line: lineChart, hbar: hbarChart, bars: barsChart, heatmap: heatmapChart, hist: histChart, fan: fanChart };
+// --------------------------------------------------------------------------- linie nad osią kategorii (krzywa rentowności)
+
+function curveChart(spec) {
+  const wrap = el("div");
+  const lg = legend(spec.series);
+  const readout = el("p", { class: "readout" });
+  const body = el("div", { class: "chart-body" });
+  wrap.append(lg.ul, readout, body);
+  const n = spec.labels.length;
+  const show = (i) => {
+    const j = i ?? n - 1;
+    spec.series.forEach((s, k) => { lg.values[k].textContent = fmt(s.values[j], spec.fmt, spec.digits); });
+    readout.textContent = i === null ? "Dotknij wykresu, żeby odczytać wartości" : spec.labels[j];
+  };
+  show(null);
+  responsive(body, (W) => {
+    const H = 230, top = 18, bottom = 24, plotH = H - top - bottom;
+    const all = spec.series.flatMap((s) => s.values.filter(isNum));
+    const t = niceTicks(Math.min(...all), Math.max(...all), 4);
+    const left = PAD + 30, right = PAD;
+    const x = (i) => left + (i / Math.max(1, n - 1)) * (W - left - right);
+    const y = (v) => top + (1 - (v - t.lo) / (t.hi - t.lo)) * plotH;
+    const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+    for (const v of t.ticks) {
+      root.append(svg("line", { class: "grid", x1: 0, x2: W, y1: y(v), y2: y(v) }));
+      const label = svg("text", { class: "axis-text", x: PAD, y: y(v) - 4 });
+      label.textContent = fmtAxis(v, spec.fmt);
+      root.append(label);
+    }
+    const step = Math.max(1, Math.ceil(n / Math.floor((W - left - right) / 30)));
+    spec.labels.forEach((name, i) => {
+      if (i % step && i !== n - 1) return;
+      const label = svg("text", { class: "axis-text", x: x(i), y: H - 6, "text-anchor": "middle" });
+      label.textContent = name;
+      root.append(label);
+    });
+    // najpierw serie porównawcze, na wierzchu pierwsza (bieżąca)
+    [...spec.series].reverse().forEach((s, r) => {
+      const first = r === spec.series.length - 1;
+      let d = "", pen = false;
+      s.values.forEach((v, i) => {
+        if (!isNum(v)) { pen = false; return; }
+        d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+        pen = true;
+      });
+      root.append(svg("path", { d, fill: "none", stroke: color(s.color), "stroke-width": first ? 2.2 : 1.5,
+        "stroke-dasharray": first ? null : "4 3", "stroke-linejoin": "round" }));
+      s.values.forEach((v, i) => {
+        if (isNum(v)) root.append(svg("circle", { cx: x(i), cy: y(v), r: first ? 3 : 2, fill: color(s.color) }));
+      });
+    });
+    const cross = svg("line", { class: "cross", y1: top, y2: top + plotH, visibility: "hidden" });
+    root.append(cross);
+    const move = (evt) => {
+      const i = Math.max(0, Math.min(n - 1, Math.round(((pointerX(evt, root, W) - left) / (W - left - right)) * (n - 1))));
+      cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+      show(i);
+    };
+    root.addEventListener("pointerdown", move);
+    root.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse" || e.pressure > 0) move(e); });
+    root.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); show(null); });
+    return root;
+  });
+  return wrap;
+}
+
+const RENDERERS = { line: lineChart, hbar: hbarChart, bars: barsChart, heatmap: heatmapChart, hist: histChart, fan: fanChart, curve: curveChart };
 
 export function renderChart(spec) {
   const fn = RENDERERS[spec.type];

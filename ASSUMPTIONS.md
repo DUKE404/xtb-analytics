@@ -379,3 +379,21 @@ kluczem z hasła użytkownika.
 - Benchmarki: serie liczone od 100 na początku widocznego okna, pod wykresem zwrot każdej serii w oknie.
   Wartość portfela: pod wykresem zmiana wartości i wpłat w oknie (zmiana wartości zawiera wpłaty).
 - Wartość portfela i obsunięcie na Przeglądzie (oraz wykresy kroczące w Statystykach) przybliżają się razem.
+
+### Rynki (stopy USA, notowania, kalendarz makro)
+- Dział nie zależy od portfela: ekrany biorą dane z `provider.markets()` (`data/markets.py`), obliczenia są
+  w `core/markets.py`. Do źródeł nie wychodzi nic o portfelu ani użytkowniku.
+- Krzywa: oficjalny CSV Departamentu Skarbu USA (par yield curve, bieżący i poprzedni rok). Zapasowo FRED
+  (bez 2M i 4M), w ostateczności Yahoo (^IRX, ^FVX, ^TNX, ^TYX - tylko 4 punkty). Zapadalność 1,5 mies. pomijam.
+- „Tydzień temu” / „miesiąc temu” = ostatnia obserwacja z dnia sprzed 7 dni / miesiąca albo wcześniej
+  (weekendy i święta biorą poprzednią sesję). Zmiany rentowności w punktach bazowych, notowań - w procentach.
+- „Od początku roku” liczone od ostatniego zamknięcia poprzedniego roku; brak historii daje „–”, nie zero.
+- Kalendarz: tygodniowe pliki JSON Forex Factory (ten i przyszły tydzień; drugi bywa niedostępny). Waga danych
+  według źródła. Czas w strefie Europe/Warsaw. Pokazuję wydarzenia od 2 godzin wstecz. Najczęstsze tytuły
+  tłumaczę na polski, pozostałe zostają po angielsku; kropkę dziesiętną w prognozach zamieniam na przecinek.
+- Cache we wspólnym SQLite (tabela kv): krzywa 3 h, notowania 15 min, kalendarz 1 h; przy błędzie sieci wraca
+  ostatnia kopia z ostrzeżeniem. Dodatkowo wynik jest pamiętany w sesji przez 10 minut.
+- Krzywa w telefonie: nowy typ wykresu `curve` (linie nad osią kategorii, odstępy równe, nie proporcjonalne
+  do czasu - jak w większości serwisów finansowych).
+- Opis stanu rynku (np. przedziały VIX: <15 spokój, 15–20 zwykła zmienność, 20–30 nerwowość, >30 stres) to
+  informacja, nie rekomendacja.
